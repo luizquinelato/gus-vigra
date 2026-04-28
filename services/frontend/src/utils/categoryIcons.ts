@@ -1,0 +1,83 @@
+// Catálogo de ícones Phosphor disponíveis para Categorias/Tags.
+// Importação nomeada preserva tree-shaking: só os ícones listados entram no bundle.
+import {
+  Tag, Bookmark, BookmarkSimple, Star, Heart, Smiley, Folder, FolderOpen, Folders, PushPin,
+  ShoppingCart, ShoppingBag, ShoppingBagOpen, Storefront, Basket, Coffee, ForkKnife, Hamburger,
+  Pizza, Cookie, Cake, IceCream, Bread, Fish, Egg, Carrot, Cherries, Avocado, Pepper,
+  BowlFood, BowlSteam, Wine, BeerStein, BeerBottle, Martini, Champagne,
+  House, HouseLine, Buildings, Building, Car, CarSimple, Bus, Train, Airplane, Bicycle,
+  Motorcycle, GasPump, Boat, Truck, Taxi, Tractor, Scooter, TreeEvergreen, Tree, Plant,
+  PottedPlant, Flower, FlowerLotus, Leaf, Couch, Bed, Armchair, Lamp, Bathtub, Shower,
+  Door, ToiletPaper, PaintBucket,
+  DeviceMobile, DeviceTablet, Laptop, Desktop, Monitor, Television, GameController, MusicNote,
+  MusicNotes, Camera, Image, Book, BookOpen, Books, Newspaper, FileText, File, WifiHigh,
+  YoutubeLogo, VideoCamera, Robot, Layout, Palette, Headphones, Microphone, Radio,
+  SpeakerHigh, HardDrives, Database, Cloud, DownloadSimple, UploadSimple, Bluetooth,
+  Cpu, Printer, Keyboard, Mouse,
+  CurrencyDollar, CreditCard, Wallet, PiggyBank, TrendUp, TrendDown, Money, Receipt, Percent,
+  Coins, Calculator, ChartBar, ChartLine, ChartPie, Bank, Vault, HandCoins, Invoice,
+  Pulse, Package, Gift, Trophy, Briefcase, Calendar, Clock, MapPin, Globe, Lightning,
+  ClipboardText, Presentation, Target, Crown, Medal, Note, NotePencil, Notebook,
+  Heartbeat, Pill, Stethoscope, Baby, Brain, Ear, Syringe, Barbell, Person, PersonSimpleRun,
+  Dog, Cat, PawPrint, Eye, EyeSlash, Thermometer, Bone, FirstAid, FirstAidKit, Tooth,
+  Drop, Fire, Wind, Sun, Moon, Waves, Snowflake, CloudRain, CloudSnow, CloudSun,
+  SunHorizon, Rainbow, Mountains, Tent, Compass, Bug, Bird, Butterfly,
+  Umbrella, TShirt, Pants, Sneaker, Watch, Eyeglasses, Sunglasses, Scissors, Diamond,
+  Sparkle, Handbag, BaseballCap,
+  Wrench, Gear, Sliders, Funnel, MagnifyingGlass, Bell, BellRinging, Hammer, PaintBrush,
+  Plug, Lock, LockOpen, Key, Toolbox, Screwdriver,
+  Envelope, EnvelopeOpen, ChatCircle, ChatText, Phone, PhoneCall, Users, User, UserPlus,
+  UserMinus, UserCircle, UserCheck, PaperPlane, Tray, At, Hash, Share, ShareNetwork,
+  ThumbsUp, ThumbsDown, Megaphone,
+  GraduationCap, Student, Backpack, Pencil, PencilSimple, PenNib, Ruler, Eraser, ChalkboardTeacher,
+  Confetti, Popcorn, FilmSlate, MapTrifold, NavigationArrow, Anchor, Sailboat, PuzzlePiece,
+  DiceFour, DiceFive, DiceSix,
+  Scales, Shield, ShieldCheck, ShieldWarning,
+  Question, WarningCircle, Warning, XCircle, Ticket, Lightbulb, ArrowsClockwise, Trash,
+  CheckCircle, Info, Shapes, Circle, Square, Triangle, Hexagon,
+} from '@phosphor-icons/react'
+import type { Icon } from '@phosphor-icons/react'
+
+export const CATEGORY_ICONS: Record<string, Icon> = {
+  Tag, Bookmark, BookmarkSimple, Star, Heart, Smiley, Folder, FolderOpen, Folders, PushPin,
+  ShoppingCart, ShoppingBag, ShoppingBagOpen, Storefront, Basket, Coffee, ForkKnife, Hamburger,
+  Pizza, Cookie, Cake, IceCream, Bread, Fish, Egg, Carrot, Cherries, Avocado, Pepper,
+  BowlFood, BowlSteam, Wine, BeerStein, BeerBottle, Martini, Champagne,
+  House, HouseLine, Buildings, Building, Car, CarSimple, Bus, Train, Airplane, Bicycle,
+  Motorcycle, GasPump, Boat, Truck, Taxi, Tractor, Scooter, TreeEvergreen, Tree, Plant,
+  PottedPlant, Flower, FlowerLotus, Leaf, Couch, Bed, Armchair, Lamp, Bathtub, Shower,
+  Door, ToiletPaper, PaintBucket,
+  DeviceMobile, DeviceTablet, Laptop, Desktop, Monitor, Television, GameController, MusicNote,
+  MusicNotes, Camera, Image, Book, BookOpen, Books, Newspaper, FileText, File, WifiHigh,
+  YoutubeLogo, VideoCamera, Robot, Layout, Palette, Headphones, Microphone, Radio,
+  SpeakerHigh, HardDrives, Database, Cloud, DownloadSimple, UploadSimple, Bluetooth,
+  Cpu, Printer, Keyboard, Mouse,
+  CurrencyDollar, CreditCard, Wallet, PiggyBank, TrendUp, TrendDown, Money, Receipt, Percent,
+  Coins, Calculator, ChartBar, ChartLine, ChartPie, Bank, Vault, HandCoins, Invoice,
+  Pulse, Package, Gift, Trophy, Briefcase, Calendar, Clock, MapPin, Globe, Lightning,
+  ClipboardText, Presentation, Target, Crown, Medal, Note, NotePencil, Notebook,
+  Heartbeat, Pill, Stethoscope, Baby, Brain, Ear, Syringe, Barbell, Person, PersonSimpleRun,
+  Dog, Cat, PawPrint, Eye, EyeSlash, Thermometer, Bone, FirstAid, FirstAidKit, Tooth,
+  Drop, Fire, Wind, Sun, Moon, Waves, Snowflake, CloudRain, CloudSnow, CloudSun,
+  SunHorizon, Rainbow, Mountains, Tent, Compass, Bug, Bird, Butterfly,
+  Umbrella, TShirt, Pants, Sneaker, Watch, Eyeglasses, Sunglasses, Scissors, Diamond,
+  Sparkle, Handbag, BaseballCap,
+  Wrench, Gear, Sliders, Funnel, MagnifyingGlass, Bell, BellRinging, Hammer, PaintBrush,
+  Plug, Lock, LockOpen, Key, Toolbox, Screwdriver,
+  Envelope, EnvelopeOpen, ChatCircle, ChatText, Phone, PhoneCall, Users, User, UserPlus,
+  UserMinus, UserCircle, UserCheck, PaperPlane, Tray, At, Hash, Share, ShareNetwork,
+  ThumbsUp, ThumbsDown, Megaphone,
+  GraduationCap, Student, Backpack, Pencil, PencilSimple, PenNib, Ruler, Eraser, ChalkboardTeacher,
+  Confetti, Popcorn, FilmSlate, MapTrifold, NavigationArrow, Anchor, Sailboat, PuzzlePiece,
+  DiceFour, DiceFive, DiceSix,
+  Scales, Shield, ShieldCheck, ShieldWarning,
+  Question, WarningCircle, Warning, XCircle, Ticket, Lightbulb, ArrowsClockwise, Trash,
+  CheckCircle, Info, Shapes, Circle, Square, Triangle, Hexagon,
+}
+
+export const CATEGORY_ICON_NAMES = Object.keys(CATEGORY_ICONS)
+
+export function getCategoryIcon(name?: string | null): Icon | null {
+  if (!name) return null
+  return CATEGORY_ICONS[name] ?? null
+}

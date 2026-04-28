@@ -1,0 +1,175 @@
+@import './colors.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Scrollbar personalizada ──────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
+
+/* ── Quantum background particles ────────────────────────────────────────── */
+@keyframes float {
+  0%, 100% { transform: translateY(0) translateX(0) scale(1); opacity: 0.6; }
+  25%       { transform: translateY(-30px) translateX(15px) scale(1.1); opacity: 1; }
+  50%       { transform: translateY(-15px) translateX(-10px) scale(0.9); opacity: 0.7; }
+  75%       { transform: translateY(-40px) translateX(20px) scale(1.05); opacity: 0.9; }
+}
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 20px var(--color1); }
+  50%       { box-shadow: 0 0 60px var(--color2), 0 0 100px var(--color3); }
+}
+@keyframes rotate-gradient {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+.animate-float    { animation: float 6s ease-in-out infinite; }
+.animate-pulse-glow { animation: pulse-glow 3s ease-in-out infinite; }
+.animate-shimmer  { animation: shimmer 3s linear infinite; }
+
+/* ── Glassmorphism helpers ────────────────────────────────────────────────── */
+.glass {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.glass-dark {
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* ── Sonner toast customization ───────────────────────────────────────────── */
+
+/*
+  Cores do toast — estilo Plumo: fundo tintado + texto/borda semânticos.
+
+  IMPORTANTE: --success-bg e similares só são lidos pelo sonner quando
+  richColors={true}. Sem richColors, o sonner usa fundo neutro (branco) para
+  todos os tipos e ignora essas variáveis.
+  Solução: CSS direto por [data-type] com !important, que sobrescreve tanto
+  as variáveis quanto os inline-styles que o richColors injeta.
+*/
+
+/* toast() — padrão sem tipo: cinza neutro */
+[data-sonner-toaster] {
+  --normal-bg:     #f8fafc;
+  --normal-text:   #475569;
+  --normal-border: #e2e8f0;
+}
+[data-sonner-toast]:not([data-type]) {
+  background-color: #f8fafc !important;   /* slate-50  */
+  color:            #475569 !important;   /* slate-600 */
+  border-color:     #e2e8f0 !important;   /* slate-200 */
+}
+.dark [data-sonner-toast]:not([data-type]) {
+  background-color: rgba(100, 116, 139, 0.15) !important;
+  color:            #cbd5e1               !important;   /* slate-300 */
+  border-color:     #475569               !important;   /* slate-600 */
+}
+
+/* ── Light mode ─────────────────────────────────────────────────────────── */
+[data-sonner-toast][data-type="success"] {
+  background-color: #f0fdf4 !important;   /* green-50  */
+  color:            #166534 !important;   /* green-800 */
+  border-color:     #86efac !important;   /* green-300 */
+}
+[data-sonner-toast][data-type="error"] {
+  background-color: #fef2f2 !important;   /* red-50    */
+  color:            #991b1b !important;   /* red-800   */
+  border-color:     #fca5a5 !important;   /* red-300   */
+}
+[data-sonner-toast][data-type="warning"] {
+  background-color: #fffbeb !important;   /* amber-50  */
+  color:            #92400e !important;   /* amber-800 */
+  border-color:     #fcd34d !important;   /* amber-300 */
+}
+[data-sonner-toast][data-type="info"] {
+  background-color: #eff6ff !important;   /* blue-50   */
+  color:            #1e40af !important;   /* blue-800  */
+  border-color:     #93c5fd !important;   /* blue-300  */
+}
+[data-sonner-toast][data-type="loading"] {
+  background-color: #eff6ff !important;   /* blue-50   */
+  color:            #1e40af !important;   /* blue-800  */
+  border-color:     #93c5fd !important;   /* blue-300  */
+}
+
+/* ── Dark mode (ThemeContext adiciona 'dark' no <html>) ─────────────────── */
+.dark [data-sonner-toast][data-type="success"] {
+  background-color: rgba(21, 128, 61, 0.15) !important;
+  color:            #bbf7d0               !important;   /* green-200 */
+  border-color:     #166534               !important;   /* green-800 */
+}
+.dark [data-sonner-toast][data-type="error"] {
+  background-color: rgba(185, 28, 28, 0.15) !important;
+  color:            #fecaca               !important;   /* red-200   */
+  border-color:     #991b1b               !important;   /* red-800   */
+}
+.dark [data-sonner-toast][data-type="warning"] {
+  background-color: rgba(180, 83, 9, 0.15) !important;
+  color:            #fde68a              !important;   /* amber-200 */
+  border-color:     #92400e              !important;   /* amber-800 */
+}
+.dark [data-sonner-toast][data-type="info"] {
+  background-color: rgba(29, 78, 216, 0.15) !important;
+  color:            #bfdbfe              !important;   /* blue-200  */
+  border-color:     #1e40af              !important;   /* blue-800  */
+}
+.dark [data-sonner-toast][data-type="loading"] {
+  background-color: rgba(29, 78, 216, 0.15) !important;
+  color:            #bfdbfe              !important;   /* blue-200  */
+  border-color:     #1e40af              !important;   /* blue-800  */
+}
+
+/*
+  Animação: puramente da DIREITA para a ESQUERDA (sem diagonal).
+
+  Causa da diagonal anterior: usávamos `transform` no keyframe, que compõe
+  com o `transform: translateY(...)` que o sonner aplica no estado não-montado.
+  Resultado: dois transforms simultâneos → movimento diagonal.
+
+  Solução em duas partes:
+  1. `translate` (propriedade CSS standalone) no keyframe — é composited
+     SEPARADAMENTE do `transform`, logo não conflita com o stacking do sonner.
+  2. `transform: none !important` no estado não-montado — elimina o Y inicial
+     do sonner, deixando apenas o nosso `translate` X controlar a entrada.
+*/
+@keyframes sbv1-toast-enter {
+  from { opacity: 0; translate: calc(100% + 1rem) 0; }
+  to   { opacity: 1; translate: 0px 0px; }
+}
+@keyframes sbv1-toast-exit {
+  from { opacity: 1; translate: 0px 0px; }
+  to   { opacity: 0; translate: calc(100% + 1rem) 0; }
+}
+
+[data-sonner-toast][data-mounted="false"],
+[data-sonner-toast][data-removed="true"] {
+  transform: none !important;
+}
+[data-sonner-toast] {
+  animation: sbv1-toast-enter 0.3s ease-out both;
+}
+[data-sonner-toast][data-removed="true"] {
+  animation: sbv1-toast-exit 0.2s ease forwards !important;
+}
+
+/* ── Gradiente de texto ───────────────────────────────────────────────────── */
+.text-gradient {
+  background: linear-gradient(135deg, var(--color-1), var(--color-2), var(--color-3));
+  background-size: 200% 200%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: rotate-gradient 4s ease infinite;
+}
