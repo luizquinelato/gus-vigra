@@ -1,15 +1,17 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   CaretDown, CaretRight, FloppyDisk, Image as ImageIcon, ListPlus,
-  Package, Plus, Trash, Warning, X,
+  Package, Plus, Trash, X,
 } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import {
-  kitItemsApi, productImagesApi, productsApi,
-  type CategoryRead, type KitItemRead, type ProductImageRead,
+  kitItemsApi, productCharacteristicsApi, productImagesApi, productsApi,
+  type CategoryRead, type CharacteristicLinkWrite, type CharacteristicRead,
+  type FamilyRead, type KitItemRead, type ProductImageRead,
   type ProductRead, type ProductType, type ProductWrite,
 } from '../services/cadastrosApi'
 import { slugify } from '../utils/slug'
+import { CharacteristicEditor } from './CharacteristicEditor'
 import { FamilyCombobox } from './FamilyCombobox'
 import { ImageCropModal } from './ImageCropModal'
 
@@ -19,7 +21,10 @@ interface Props {
   initial: ProductRead | null
   categories: CategoryRead[]
   allProducts: ProductRead[]
-  existingFamilies: string[]
+  families: FamilyRead[]
+  characteristics: CharacteristicRead[]
+  onFamilyCreated?: (created: FamilyRead) => void
+  onCharacteristicCreated?: (created: CharacteristicRead) => void
   onClose: () => void
   onSaved: () => void
 }
@@ -45,63 +50,6 @@ function Section({ icon: Icon, title, children, defaultOpen = true }: {
         <Icon size={15} /> {title}
       </button>
       {open && <div className="p-3 border-t border-gray-200 dark:border-gray-700">{children}</div>}
-    </div>
-  )
-}
-
-// ── Editor de características (key/value livre que vai para JSONB attributes) ──
-
-function AttrEditor({ value, onChange }: { value: Record<string, unknown> | null; onChange: (v: Record<string, string>) => void }) {
-  // Estado interno como array para permitir chaves duplicadas durante edição
-  // (Object.fromEntries colapsaria last-wins, fazendo a primeira linha "sumir").
-  const [entries, setEntries] = useState<Array<[string, string]>>(
-    () => Object.entries((value ?? {}) as Record<string, string>),
-  )
-
-  function notify(next: Array<[string, string]>) {
-    setEntries(next)
-    // Para o parent, mantém a forma JSONB (Record); duplicatas serão resolvidas
-    // pelo last-wins natural — o aviso visual abaixo orienta o usuário.
-    const filled = next.filter(([k]) => k.trim() !== '')
-    onChange(Object.fromEntries(filled))
-  }
-  function setKey(idx: number, k: string) { notify(entries.map(([key, val], i) => i === idx ? [k, val] : [key, val])) }
-  function setVal(idx: number, v: string) { notify(entries.map(([key, val], i) => i === idx ? [key, v] : [key, val])) }
-  function remove(idx: number)             { notify(entries.filter((_, i) => i !== idx)) }
-  function add()                           { notify([...entries, ['', '']]) }
-
-  const dupKeys = useMemo(() => {
-    const seen = new Map<string, number>()
-    entries.forEach(([k]) => {
-      const norm = k.trim().toLowerCase()
-      if (!norm) return
-      seen.set(norm, (seen.get(norm) ?? 0) + 1)
-    })
-    return new Set(Array.from(seen.entries()).filter(([, c]) => c > 1).map(([k]) => k))
-  }, [entries])
-
-  return (
-    <div className="space-y-2">
-      {entries.length === 0 && <p className="text-xs text-gray-400">Nenhuma característica. Ex: tamanho = M, cor = Azul.</p>}
-      {entries.map(([k, v], i) => {
-        const isDup = dupKeys.has(k.trim().toLowerCase())
-        return (
-          <div key={i} className="flex gap-2">
-            <input value={k} onChange={e => setKey(i, e.target.value)} placeholder="característica"
-              className={`${fieldCls} ${isDup ? 'border-amber-400 dark:border-amber-500' : ''}`} />
-            <input value={String(v)} onChange={e => setVal(i, e.target.value)} placeholder="valor" className={fieldCls} />
-            <button type="button" onClick={() => remove(i)} className="text-gray-400 hover:text-red-600 px-2"><Trash size={15} /></button>
-          </div>
-        )
-      })}
-      {dupKeys.size > 0 && (
-        <p className="text-xs text-amber-600 dark:text-amber-400 inline-flex items-center gap-1">
-          <Warning size={12} /> Características repetidas serão sobrescritas (mantém apenas o último valor).
-        </p>
-      )}
-      <button type="button" onClick={add} className="text-xs inline-flex items-center gap-1 text-[var(--color-1)] hover:underline">
-        <Plus size={12} /> Adicionar característica
-      </button>
     </div>
   )
 }
@@ -169,7 +117,9 @@ function KitEditor({ kitId, allProducts }: { kitId: number; allProducts: Product
 
 // ── Galeria de imagens (com upload + crop + opção de aplicar à família) ──────
 
-function ImageGallery({ productId, family }: { productId: number; family: string | null }) {
+function ImageGallery({ productId, familyId, familyName }: {
+  productId: number; familyId: number | null; familyName: string | null
+}) {
   const [images, setImages] = useState<ProductImageRead[]>([])
   const [pending, setPending] = useState<{ src: string; name: string } | null>(null)
   const [shareWithFamily, setShareWithFamily] = useState(false)
@@ -191,8 +141,8 @@ function ImageGallery({ productId, family }: { productId: number; family: string
     setBusy(true)
     try {
       const { url } = await productImagesApi.upload(file)
-      const fam = shareWithFamily ? family : null
-      await productImagesApi.attach(productId, { url, family: fam, sort_order: images.length })
+      const fid = shareWithFamily ? familyId : null
+      await productImagesApi.attach(productId, { url, family_id: fid, sort_order: images.length })
       setPending(null); reload()
     } catch (e: unknown) {
       const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
@@ -212,7 +162,7 @@ function ImageGallery({ productId, family }: { productId: number; family: string
         {visible.map(img => (
           <div key={img.id} className="relative aspect-square bg-gray-100 dark:bg-gray-900 rounded-lg overflow-hidden group">
             <img src={img.url} alt={img.alt_text ?? ''} className="w-full h-full object-cover" />
-            {img.family && (
+            {img.family_id != null && (
               <span className="absolute top-1 left-1 text-[10px] px-1.5 py-0.5 rounded bg-black/60 text-white">família</span>
             )}
             <button type="button" onClick={() => remove(img)}
@@ -228,11 +178,11 @@ function ImageGallery({ productId, family }: { productId: number; family: string
             onChange={e => e.target.files?.[0] && handlePick(e.target.files[0])} />
         </label>
       </div>
-      {family && (
+      {familyId != null && (
         <label className="inline-flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
           <input type="checkbox" checked={shareWithFamily} onChange={e => setShareWithFamily(e.target.checked)}
             className="accent-[var(--color-1)]" />
-          Aplicar a todos os produtos da família "{family}"
+          Aplicar a todos os produtos da família "{familyName ?? `#${familyId}`}"
         </label>
       )}
       {pending && (
@@ -245,11 +195,13 @@ function ImageGallery({ productId, family }: { productId: number; family: string
 
 // ── Modal principal ──────────────────────────────────────────────────────────
 
-export function ProductFormModal({ initial, categories, allProducts, existingFamilies, onClose, onSaved }: Props) {
+export function ProductFormModal({
+  initial, categories, allProducts, families, characteristics,
+  onFamilyCreated, onCharacteristicCreated, onClose, onSaved,
+}: Props) {
   const [draft, setDraft] = useState<ProductWrite>({
     code: initial?.code ?? '', name: initial?.name ?? '', slug: initial?.slug ?? '',
-    family: initial?.family ?? null,
-    attributes: initial?.attributes ?? null,
+    family_id: initial?.family_id ?? null,
     barcode: initial?.barcode ?? null,
     price: initial?.price ?? '0', cost: initial?.cost ?? '0',
     unit: initial?.unit ?? 'un',
@@ -268,6 +220,15 @@ export function ProductFormModal({ initial, categories, allProducts, existingFam
   })
   const [slugLinked, setSlugLinked] = useState(!initial?.slug)
   const [saving, setSaving] = useState(false)
+  // Links de characteristic-value: carrega do backend ao editar.
+  const [links, setLinks] = useState<CharacteristicLinkWrite[]>([])
+
+  useEffect(() => {
+    if (!initial) { setLinks([]); return }
+    productCharacteristicsApi.list(initial.id)
+      .then(rows => setLinks(rows.map(r => ({ characteristic_id: r.characteristic_id, value_id: r.value_id }))))
+      .catch(() => toast.error('Erro ao carregar características.'))
+  }, [initial])
 
   function set<K extends keyof ProductWrite>(k: K, v: ProductWrite[K]) { setDraft(p => ({ ...p, [k]: v })) }
   function onChangeName(v: string) {
@@ -284,16 +245,17 @@ export function ProductFormModal({ initial, categories, allProducts, existingFam
       const body: ProductWrite = {
         ...draft,
         code: draft.code.trim(), name: draft.name.trim(), slug: draft.slug.trim(),
-        family: draft.family?.toString().trim() || null,
         barcode: draft.barcode?.toString().trim() || null,
         brand: draft.brand?.toString().trim() || null,
         ncm: draft.ncm?.toString().trim() || null,
         description: draft.description?.toString().trim() || null,
         short_description: draft.short_description?.toString().trim() || null,
-        attributes: draft.attributes && Object.keys(draft.attributes).length > 0 ? draft.attributes : null,
       }
-      if (initial) await productsApi.patch(initial.id, body)
-      else         await productsApi.create(body)
+      const saved = initial
+        ? await productsApi.patch(initial.id, body)
+        : await productsApi.create(body)
+      // Persiste characteristic-links via PUT em lote (substitui os existentes).
+      await productCharacteristicsApi.replace(saved.id, links)
       toast.success(initial ? 'Produto atualizado.' : 'Produto criado.')
       onSaved()
     } catch (e: unknown) {
@@ -301,6 +263,10 @@ export function ProductFormModal({ initial, categories, allProducts, existingFam
       toast.error(msg ?? 'Erro ao salvar produto.')
     } finally { setSaving(false) }
   }
+
+  const currentFamilyName = draft.family_id != null
+    ? families.find(f => f.id === draft.family_id)?.name ?? null
+    : null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -352,13 +318,17 @@ export function ProductFormModal({ initial, categories, allProducts, existingFam
           <Section icon={ListPlus} title="Família & Características">
             <div className="grid grid-cols-2 gap-3 mb-3">
               <Field label="Família (agrupa variações)">
-                <FamilyCombobox value={draft.family ?? ''} onChange={v => set('family', v || null)}
-                  options={existingFamilies} placeholder="Buscar ou criar família…" />
+                <FamilyCombobox value={draft.family_id ?? null}
+                  onChange={id => set('family_id', id)}
+                  options={families} onCreated={onFamilyCreated}
+                  placeholder="Buscar ou criar família…" />
               </Field>
             </div>
             <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Características</span>
             <div className="mt-1">
-              <AttrEditor value={draft.attributes ?? null} onChange={v => set('attributes', v)} />
+              <CharacteristicEditor value={links} onChange={setLinks}
+                characteristics={characteristics}
+                onCharacteristicCreated={onCharacteristicCreated} />
             </div>
           </Section>
 
@@ -370,7 +340,8 @@ export function ProductFormModal({ initial, categories, allProducts, existingFam
 
           {initial && (
             <Section icon={ImageIcon} title="Imagens">
-              <ImageGallery productId={initial.id} family={draft.family ?? null} />
+              <ImageGallery productId={initial.id}
+                familyId={draft.family_id ?? null} familyName={currentFamilyName} />
             </Section>
           )}
 

@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { CaretDown, CaretRight, MagicWand, MagnifyingGlass, Pencil, Plus, Trash } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import {
-  categoriesApi, productsApi,
-  type CategoryRead, type ProductRead,
+  categoriesApi, characteristicsApi, familiesApi, productsApi,
+  type CategoryRead, type CharacteristicRead, type FamilyRead, type ProductRead,
 } from '../services/cadastrosApi'
 import { ProductFormModal } from '../components/ProductFormModal'
 import { ProductBulkWizardModal } from '../components/ProductBulkWizardModal'
@@ -17,6 +17,8 @@ function fmtMoney(v: string | number): string {
 export default function ProductsPage() {
   const [items, setItems] = useState<ProductRead[]>([])
   const [categories, setCategories] = useState<CategoryRead[]>([])
+  const [families, setFamilies] = useState<FamilyRead[]>([])
+  const [characteristics, setCharacteristics] = useState<CharacteristicRead[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('')
   const [editing, setEditing] = useState<ProductRead | null>(null)
@@ -29,12 +31,25 @@ export default function ProductsPage() {
     Promise.all([
       productsApi.list({ only_active: false, limit: 500 }),
       categoriesApi.list({ only_active: false }),
+      familiesApi.list({ only_active: true }),
+      characteristicsApi.list({ only_active: true }),
     ])
-      .then(([p, c]) => { setItems(p); setCategories(c) })
+      .then(([p, c, f, ch]) => { setItems(p); setCategories(c); setFamilies(f); setCharacteristics(ch) })
       .catch(() => toast.error('Erro ao carregar produtos.'))
       .finally(() => setLoading(false))
   }
   useEffect(reload, [])
+
+  const familyById = useMemo(() => {
+    const m = new Map<number, FamilyRead>()
+    families.forEach(f => m.set(f.id, f))
+    return m
+  }, [families])
+
+  function familyLabel(id: number | null): string {
+    if (id == null) return ''
+    return familyById.get(id)?.name ?? `#${id}`
+  }
 
   const filtered = useMemo(() => {
     const f = filter.toLowerCase()
@@ -43,31 +58,25 @@ export default function ProductsPage() {
       p.name.toLowerCase().includes(f) ||
       (p.brand ?? '').toLowerCase().includes(f) ||
       p.code.toLowerCase().includes(f) ||
-      (p.family ?? '').toLowerCase().includes(f) ||
+      familyLabel(p.family_id).toLowerCase().includes(f) ||
       (p.barcode ?? '').toLowerCase().includes(f),
     )
-  }, [items, filter])
-
-  const existingFamilies = useMemo(() => {
-    const set = new Set<string>()
-    items.forEach(p => { const f = p.family?.trim(); if (f) set.add(f) })
-    return Array.from(set)
-  }, [items])
+  }, [items, filter, familyById])
 
   // Agrupa por família. Produtos sem família vão para grupo FREE_KEY (renderizado no fim).
   const groups = useMemo(() => {
     const map = new Map<string, ProductRead[]>()
     filtered.forEach(p => {
-      const k = p.family && p.family.trim() ? p.family : FREE_KEY
+      const k = p.family_id != null ? String(p.family_id) : FREE_KEY
       if (!map.has(k)) map.set(k, [])
       map.get(k)!.push(p)
     })
     return Array.from(map.entries()).sort((a, b) => {
       if (a[0] === FREE_KEY) return 1
       if (b[0] === FREE_KEY) return -1
-      return a[0].localeCompare(b[0])
+      return familyLabel(Number(a[0])).localeCompare(familyLabel(Number(b[0])))
     })
-  }, [filtered])
+  }, [filtered, familyById])
 
   function toggleGroup(family: string) {
     setCollapsed(s => {
@@ -75,6 +84,13 @@ export default function ProductsPage() {
       if (n.has(family)) n.delete(family); else n.add(family)
       return n
     })
+  }
+
+  function mergeFamily(created: FamilyRead) {
+    setFamilies(prev => prev.some(f => f.id === created.id) ? prev : [...prev, created])
+  }
+  function mergeCharacteristic(created: CharacteristicRead) {
+    setCharacteristics(prev => prev.some(c => c.id === created.id) ? prev : [...prev, created])
   }
 
   async function handleSoftDelete(p: ProductRead) {
@@ -115,13 +131,14 @@ export default function ProductsPage() {
          : groups.map(([family, list]) => {
             const isFree = family === FREE_KEY
             const isCollapsed = collapsed.has(family)
+            const label = isFree ? '' : familyLabel(Number(family))
             return (
               <div key={family}>
                 {!isFree && (
                   <button onClick={() => toggleGroup(family)}
                     className="w-full flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2 hover:text-[var(--color-1)]">
                     {isCollapsed ? <CaretRight size={14} /> : <CaretDown size={14} />}
-                    Família · <span className="font-mono text-xs text-gray-500 dark:text-gray-400">{family}</span>
+                    Família · <span className="font-mono text-xs text-gray-500 dark:text-gray-400">{label}</span>
                     <span className="text-xs text-gray-400 font-normal">({list.length})</span>
                   </button>
                 )}
@@ -130,7 +147,6 @@ export default function ProductsPage() {
                     <thead><tr className="border-b border-gray-100 dark:border-gray-700">
                       <th className="text-left pb-2 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300 w-32">Código</th>
                       <th className="text-left pb-2 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300">Produto</th>
-                      <th className="text-left pb-2 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300">Características</th>
                       <th className="text-right pb-2 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300 w-24">Preço</th>
                       <th className="text-left pb-2 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300 w-20">Tipo</th>
                       <th className="text-center pb-2 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300 w-20">Status</th>
@@ -139,7 +155,6 @@ export default function ProductsPage() {
                     <tbody>
                       {list.map((p, i) => {
                         const cat = categories.find(c => c.id === p.category_id)
-                        const attrs = p.attributes ? Object.entries(p.attributes as Record<string, unknown>).map(([k, v]) => `${k}: ${v}`).join(', ') : ''
                         return (
                           <tr key={p.id} className={`hover:bg-gray-100 dark:hover:bg-gray-700/50 ${i % 2 === 0 ? 'bg-gray-50 dark:bg-gray-700/30' : ''}`}>
                             <td className="py-3 pl-3 font-mono text-xs text-gray-600 dark:text-gray-300">{p.code}</td>
@@ -147,7 +162,6 @@ export default function ProductsPage() {
                               <p className="font-semibold text-gray-800 dark:text-gray-100">{p.name}</p>
                               <p className="text-xs text-gray-400">{[p.brand, cat?.name].filter(Boolean).join(' · ') || '—'}</p>
                             </td>
-                            <td className="py-3 text-xs text-gray-500 dark:text-gray-400">{attrs || '—'}</td>
                             <td className="py-3 text-right text-gray-700 dark:text-gray-200">{fmtMoney(p.price)}</td>
                             <td className="py-3 text-xs text-gray-500 dark:text-gray-400">{p.type === 'kit' ? 'Kit' : 'Simples'}</td>
                             <td className="py-3 text-center">
@@ -172,12 +186,15 @@ export default function ProductsPage() {
 
       {openForm && (
         <ProductFormModal initial={editing} categories={categories} allProducts={items}
-          existingFamilies={existingFamilies}
+          families={families} characteristics={characteristics}
+          onFamilyCreated={mergeFamily} onCharacteristicCreated={mergeCharacteristic}
           onClose={() => setOpenForm(false)}
           onSaved={() => { setOpenForm(false); reload() }} />
       )}
       {openWizard && (
-        <ProductBulkWizardModal categories={categories} existingFamilies={existingFamilies}
+        <ProductBulkWizardModal categories={categories}
+          families={families} characteristics={characteristics}
+          onFamilyCreated={mergeFamily} onCharacteristicCreated={mergeCharacteristic}
           onClose={() => setOpenWizard(false)}
           onSaved={() => { setOpenWizard(false); reload() }} />
       )}

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { NavLink, useNavigate, useLocation } from 'react-router-dom'
-import { House, Palette, User, SignOut, Gear, CaretRight, CaretLeft, Sun, Moon, ShieldCheck, SquaresFour, Tray, Database, Tag, Package, CurrencyDollar, Megaphone, Broadcast, FolderSimple } from '@phosphor-icons/react'
+import { House, Palette, User, SignOut, Gear, CaretRight, CaretLeft, Sun, Moon, ShieldCheck, SquaresFour, Tray, Database, Tag, Package, CurrencyDollar, Megaphone, Broadcast, FolderSimple, Stack, Sliders } from '@phosphor-icons/react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/useTheme'
 import apiClient from '../services/apiClient'
@@ -375,12 +375,14 @@ export default function Sidebar() {
           icon={Database} label="Cadastros" collapsed={collapsed} isDark={isDark}
           routes={['/cadastros']}
           items={[
-            { to: '/cadastros/produtos',       label: 'Produtos',         icon: Package },
-            { to: '/cadastros/categorias',     label: 'Categorias',       icon: FolderSimple },
-            { to: '/cadastros/tags',           label: 'Tags',             icon: Tag },
-            { to: '/cadastros/tabelas-preco',  label: 'Tabelas de Preço', icon: CurrencyDollar },
-            { to: '/cadastros/promocoes',      label: 'Promoções',        icon: Megaphone },
-            { to: '/cadastros/campanhas',      label: 'Campanhas',        icon: Broadcast },
+            { to: '/cadastros/produtos',        label: 'Produtos',         icon: Package },
+            { to: '/cadastros/familias',        label: 'Famílias',         icon: Stack },
+            { to: '/cadastros/caracteristicas', label: 'Características',  icon: Sliders },
+            { to: '/cadastros/categorias',      label: 'Categorias',       icon: FolderSimple },
+            { to: '/cadastros/tags',            label: 'Tags',             icon: Tag },
+            { to: '/cadastros/tabelas-preco',   label: 'Tabelas de Preço', icon: CurrencyDollar },
+            { to: '/cadastros/promocoes',       label: 'Promoções',        icon: Megaphone },
+            { to: '/cadastros/campanhas',       label: 'Campanhas',        icon: Broadcast },
           ]}
           selBg={selBg} selColor={selColor} content={content} muted={muted} overlay={overlay}
         />

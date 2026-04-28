@@ -1,74 +1,157 @@
-import { useMemo, useState } from 'react'
-import { ArrowLeft, ArrowRight, FloppyDisk, MagicWand, Plus, Trash, Warning, X } from '@phosphor-icons/react'
+import { useEffect, useMemo, useState } from 'react'
+import { ArrowLeft, ArrowRight, FloppyDisk, MagicWand, Plus, Trash, X } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import {
-  productsBulkApi, type CategoryRead, type ProductWrite,
+  characteristicValuesApi, characteristicsApi, productsBulkApi,
+  type CategoryRead, type CharacteristicRead, type CharacteristicType,
+  type CharacteristicValueRead, type FamilyRead, type ProductBulkItem,
 } from '../services/cadastrosApi'
 import { slugify } from '../utils/slug'
+import { CharacteristicCombobox } from './CharacteristicCombobox'
+import { CharacteristicValueCombobox } from './CharacteristicValueCombobox'
 import { FamilyCombobox } from './FamilyCombobox'
 
 const fieldCls = 'w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 outline-none focus:border-[var(--color-1)]'
 
 interface Props {
   categories: CategoryRead[]
-  existingFamilies: string[]
+  families: FamilyRead[]
+  characteristics: CharacteristicRead[]
+  onFamilyCreated?: (created: FamilyRead) => void
+  onCharacteristicCreated?: (created: CharacteristicRead) => void
   onClose: () => void
   onSaved: () => void
 }
 
-interface Axis { name: string; values: string }                    // values é csv
-interface Base { family: string; codePrefix: string; namePrefix: string; price: string; cost: string; unit: string; brand: string; category_id: number | null }
+// Eixo da combinatória: characteristic + N valores (ids do catálogo).
+interface Axis { characteristic_id: number | null; value_ids: number[] }
 
-interface Row { code: string; name: string; price: string; cost: string; attributes: Record<string, string> }
+interface Base {
+  family_id: number | null; codePrefix: string; namePrefix: string
+  price: string; cost: string; unit: string; brand: string; category_id: number | null
+}
 
-function cartesian(axes: Axis[]): Record<string, string>[] {
-  const cleaned = axes
-    .map(a => ({ name: a.name.trim(), vals: a.values.split(',').map(v => v.trim()).filter(Boolean) }))
-    .filter(a => a.name && a.vals.length > 0)
+interface Row {
+  code: string; name: string; price: string; cost: string
+  // Cada combinação: { characteristic_id, value_id } pré-resolvido para o backend.
+  links: Array<{ characteristic_id: number; value_id: number }>
+  // Cache de labels para exibir na revisão.
+  labels: string[]
+}
+
+function cartesian(axes: Axis[]): Array<Array<{ characteristic_id: number; value_id: number }>> {
+  const cleaned = axes.filter(a => a.characteristic_id != null && a.value_ids.length > 0)
   if (cleaned.length === 0) return []
-  let acc: Record<string, string>[] = [{}]
+  let acc: Array<Array<{ characteristic_id: number; value_id: number }>> = [[]]
   for (const a of cleaned) {
-    const next: Record<string, string>[] = []
-    for (const prev of acc) for (const v of a.vals) next.push({ ...prev, [a.name]: v })
+    const next: Array<Array<{ characteristic_id: number; value_id: number }>> = []
+    for (const prev of acc) {
+      for (const vid of a.value_ids) {
+        next.push([...prev, { characteristic_id: a.characteristic_id!, value_id: vid }])
+      }
+    }
     acc = next
   }
   return acc
 }
 
-export function ProductBulkWizardModal({ categories, existingFamilies, onClose, onSaved }: Props) {
+export function ProductBulkWizardModal({
+  categories, families, characteristics,
+  onFamilyCreated, onCharacteristicCreated, onClose, onSaved,
+}: Props) {
   const [step, setStep] = useState<1 | 2>(1)
   const [base, setBase] = useState<Base>({
-    family: '', codePrefix: '', namePrefix: '', price: '0', cost: '0', unit: 'un',
+    family_id: null, codePrefix: '', namePrefix: '', price: '0', cost: '0', unit: 'un',
     brand: '', category_id: null,
   })
-  const [axes, setAxes] = useState<Axis[]>([{ name: '', values: '' }])
+  const [axes, setAxes] = useState<Axis[]>([{ characteristic_id: null, value_ids: [] }])
   const [rows, setRows] = useState<Row[]>([])
   const [saving, setSaving] = useState(false)
+  // Cache de valores por characteristic_id (compartilhado entre axes).
+  const [valuesCache, setValuesCache] = useState<Record<number, CharacteristicValueRead[]>>({})
+
+  async function ensureValuesLoaded(characteristicId: number) {
+    if (valuesCache[characteristicId]) return
+    try {
+      const list = await characteristicValuesApi.listByCharacteristic(characteristicId, { only_active: true })
+      setValuesCache(prev => ({ ...prev, [characteristicId]: list }))
+    } catch { /* silencioso */ }
+  }
+
+  useEffect(() => {
+    axes.forEach(a => { if (a.characteristic_id != null) void ensureValuesLoaded(a.characteristic_id) })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const usedCharIds = useMemo(
+    () => new Set(axes.map(a => a.characteristic_id).filter((v): v is number => v != null)),
+    [axes],
+  )
+
+  const familyName = base.family_id != null
+    ? families.find(f => f.id === base.family_id)?.name ?? ''
+    : ''
 
   const combos = useMemo(() => cartesian(axes), [axes])
 
-  const dupAxes = useMemo(() => {
-    const seen = new Map<string, number>()
-    axes.forEach(a => {
-      const norm = a.name.trim().toLowerCase()
-      if (!norm) return
-      seen.set(norm, (seen.get(norm) ?? 0) + 1)
-    })
-    return new Set(Array.from(seen.entries()).filter(([, c]) => c > 1).map(([k]) => k))
-  }, [axes])
+  function setAxisCharacteristic(idx: number, charId: number | null) {
+    if (charId != null) {
+      const dupIdx = axes.findIndex((a, i) => i !== idx && a.characteristic_id === charId)
+      if (dupIdx !== -1) {
+        toast.info('Característica já adicionada — linha removida.')
+        setAxes(prev => prev.filter((_, i) => i !== idx))
+        return
+      }
+      void ensureValuesLoaded(charId)
+    }
+    setAxes(prev => prev.map((a, i) => i === idx ? { characteristic_id: charId, value_ids: [] } : a))
+  }
+  function addAxisValue(idx: number, valueId: number | null) {
+    if (valueId == null) return
+    setAxes(prev => prev.map((a, i) => {
+      if (i !== idx) return a
+      if (a.value_ids.includes(valueId)) return a
+      return { ...a, value_ids: [...a.value_ids, valueId] }
+    }))
+  }
+  function removeAxisValue(idx: number, valueId: number) {
+    setAxes(prev => prev.map((a, i) => i === idx ? { ...a, value_ids: a.value_ids.filter(v => v !== valueId) } : a))
+  }
+
+  async function createCharacteristic(name: string, type: CharacteristicType) {
+    const created = await characteristicsApi.create({ name, type })
+    onCharacteristicCreated?.(created)
+    return created
+  }
+  async function createValue(charId: number, body: { value: string; hex_color?: string | null; numeric_value?: string | null; unit?: string | null }) {
+    const created = await characteristicValuesApi.create(charId, body)
+    setValuesCache(prev => ({ ...prev, [charId]: [...(prev[charId] ?? []), created] }))
+    return created
+  }
 
   function buildRows() {
-    if (!base.family.trim()) { toast.error('Família é obrigatória.'); return }
-    if (dupAxes.size > 0) { toast.error('Há características repetidas. Renomeie ou remova as duplicatas.'); return }
+    if (base.family_id == null) { toast.error('Família é obrigatória.'); return }
     if (combos.length === 0) { toast.error('Defina ao menos uma característica com valores.'); return }
-    const next: Row[] = combos.map(attrs => {
-      const suffix = Object.values(attrs).map(v => v.toUpperCase().replace(/\s+/g, '')).join('-')
-      const nameSuf = Object.values(attrs).join(' / ')
+    const next: Row[] = combos.map(combo => {
+      const labels = combo.map(({ characteristic_id, value_id }) => {
+        const c = characteristics.find(x => x.id === characteristic_id)
+        const v = valuesCache[characteristic_id]?.find(x => x.id === value_id)
+        return `${c?.name ?? '?'}: ${v?.value ?? '?'}`
+      })
+      const codeSuffix = combo.map(({ value_id }) => {
+        const allValues = Object.values(valuesCache).flat()
+        const v = allValues.find(x => x.id === value_id)
+        return (v?.value ?? '').toUpperCase().replace(/\s+/g, '')
+      }).filter(Boolean).join('-')
+      const nameSuffix = combo.map(({ value_id }) => {
+        const allValues = Object.values(valuesCache).flat()
+        return allValues.find(x => x.id === value_id)?.value ?? ''
+      }).filter(Boolean).join(' / ')
       return {
-        code: `${base.codePrefix.trim()}${base.codePrefix.trim() ? '-' : ''}${suffix}`,
-        name: `${base.namePrefix.trim()} ${nameSuf}`.trim(),
+        code: `${base.codePrefix.trim()}${base.codePrefix.trim() ? '-' : ''}${codeSuffix}`,
+        name: `${base.namePrefix.trim()} ${nameSuffix}`.trim(),
         price: base.price, cost: base.cost,
-        attributes: attrs,
+        links: combo, labels,
       }
     })
     setRows(next); setStep(2)
@@ -84,13 +167,14 @@ export function ProductBulkWizardModal({ categories, existingFamilies, onClose, 
     if (rows.some(r => !r.code.trim() || !r.name.trim())) { toast.error('Todos precisam de código e nome.'); return }
     setSaving(true)
     try {
-      const items: ProductWrite[] = rows.map(r => ({
-        code: r.code.trim(), name: r.name.trim(), slug: slugify(`${base.family}-${r.code}`),
-        family: base.family.trim(), attributes: r.attributes,
+      const items: ProductBulkItem[] = rows.map(r => ({
+        code: r.code.trim(), name: r.name.trim(),
+        slug: slugify(`${familyName}-${r.code}`),
+        family_id: base.family_id, characteristics: r.links,
         price: r.price, cost: r.cost, unit: base.unit, type: 'simple',
         brand: base.brand.trim() || null, category_id: base.category_id,
       }))
-      await productsBulkApi.create({ family: base.family.trim(), items })
+      await productsBulkApi.create({ family_id: base.family_id, items })
       toast.success(`${items.length} produtos criados.`)
       onSaved()
     } catch (e: unknown) {
@@ -114,8 +198,10 @@ export function ProductBulkWizardModal({ categories, existingFamilies, onClose, 
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Família</span>
                 <div className="mt-1">
-                  <FamilyCombobox value={base.family} onChange={v => setBase(b => ({ ...b, family: v }))}
-                    options={existingFamilies} placeholder="Buscar ou criar família…" />
+                  <FamilyCombobox value={base.family_id}
+                    onChange={id => setBase(b => ({ ...b, family_id: id }))}
+                    options={families} onCreated={onFamilyCreated}
+                    placeholder="Buscar ou criar família…" />
                 </div>
               </div>
               <label className="block"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Prefixo do código</span>
@@ -139,35 +225,68 @@ export function ProductBulkWizardModal({ categories, existingFamilies, onClose, 
 
             <div>
               <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-2">Características (eixos da combinatória)</p>
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {axes.map((a, i) => {
-                  const isDup = dupAxes.has(a.name.trim().toLowerCase())
+                  const charType = a.characteristic_id != null
+                    ? (characteristics.find(c => c.id === a.characteristic_id)?.type as CharacteristicType | undefined)
+                    : undefined
+                  const cachedValues = a.characteristic_id != null ? (valuesCache[a.characteristic_id] ?? []) : []
+                  const remainingValues = cachedValues.filter(v => !a.value_ids.includes(v.id))
                   return (
-                    <div key={i} className="flex gap-2">
-                      <input value={a.name} onChange={e => setAxes(xs => xs.map((x, k) => k === i ? { ...x, name: e.target.value } : x))}
-                        placeholder="ex: tamanho"
-                        className={`${fieldCls} w-40 ${isDup ? 'border-amber-400 dark:border-amber-500' : ''}`} />
-                      <input value={a.values} onChange={e => setAxes(xs => xs.map((x, k) => k === i ? { ...x, values: e.target.value } : x))} placeholder="P, M, G (separar por vírgula)" className={fieldCls} />
-                      <button type="button" onClick={() => setAxes(xs => xs.filter((_, k) => k !== i))} className="text-gray-400 hover:text-red-600 px-2"><Trash size={15} /></button>
+                    <div key={i} className="border border-gray-200 dark:border-gray-700 rounded-lg p-3 space-y-2">
+                      <div className="flex gap-2">
+                        <div className="flex-1">
+                          <CharacteristicCombobox value={a.characteristic_id}
+                            onChange={id => setAxisCharacteristic(i, id)}
+                            options={characteristics}
+                            excludeIds={Array.from(usedCharIds).filter(id => id !== a.characteristic_id)}
+                            onCreate={createCharacteristic} />
+                        </div>
+                        <button type="button" onClick={() => setAxes(xs => xs.filter((_, k) => k !== i))}
+                          className="text-gray-400 hover:text-red-600 px-2"><Trash size={15} /></button>
+                      </div>
+                      {a.characteristic_id != null && (
+                        <>
+                          <div className="flex flex-wrap gap-1">
+                            {a.value_ids.map(vid => {
+                              const v = cachedValues.find(x => x.id === vid)
+                              return (
+                                <span key={vid} className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
+                                  {charType === 'color' && v?.hex_color && (
+                                    <span className="inline-block w-3 h-3 rounded-full border border-gray-300 dark:border-gray-600" style={{ backgroundColor: v.hex_color }} />
+                                  )}
+                                  {v?.value ?? `#${vid}`}
+                                  {charType === 'number' && v?.unit && <span className="text-gray-400">{v.unit}</span>}
+                                  <button type="button" onClick={() => removeAxisValue(i, vid)} className="text-gray-400 hover:text-red-500"><X size={10} /></button>
+                                </span>
+                              )
+                            })}
+                            {a.value_ids.length === 0 && (
+                              <span className="text-[11px] text-gray-400">Nenhum valor selecionado.</span>
+                            )}
+                          </div>
+                          <CharacteristicValueCombobox value={null}
+                            onChange={vid => addAxisValue(i, vid)}
+                            options={remainingValues}
+                            characteristicType={charType ?? 'text'}
+                            onCreate={body => createValue(a.characteristic_id!, body)} />
+                        </>
+                      )}
                     </div>
                   )
                 })}
-                <button type="button" onClick={() => setAxes(xs => [...xs, { name: '', values: '' }])} className="text-xs inline-flex items-center gap-1 text-[var(--color-1)] hover:underline">
+                <button type="button" onClick={() => setAxes(xs => [...xs, { characteristic_id: null, value_ids: [] }])}
+                  className="text-xs inline-flex items-center gap-1 text-[var(--color-1)] hover:underline">
                   <Plus size={12} /> Adicionar característica
                 </button>
               </div>
-              {dupAxes.size > 0 && (
-                <p className="text-xs text-amber-600 dark:text-amber-400 inline-flex items-center gap-1 mt-2">
-                  <Warning size={12} /> Características repetidas — renomeie ou remova antes de avançar.
-                </p>
-              )}
               <p className="text-xs text-gray-400 mt-2">Combinações geradas: <strong>{combos.length}</strong></p>
             </div>
           </div>
         ) : (
           <div className="space-y-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              Revisar e ajustar cada produto. Ao salvar, todos serão criados com a família <strong>{base.family}</strong>.
+              Revisar e ajustar cada produto. Ao salvar, todos serão criados com a família <strong>{familyName || `#${base.family_id}`}</strong>.
             </p>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -182,7 +301,7 @@ export function ProductBulkWizardModal({ categories, existingFamilies, onClose, 
                   {rows.map((r, i) => (
                     <tr key={i} className={i % 2 === 0 ? 'bg-gray-50 dark:bg-gray-700/30' : ''}>
                       <td className="py-2 pl-2 text-xs text-gray-500 dark:text-gray-400">
-                        {Object.entries(r.attributes).map(([k, v]) => `${k}: ${v}`).join(', ')}
+                        {r.labels.join(', ')}
                       </td>
                       <td className="py-2"><input value={r.code} onChange={e => updateRow(i, { code: e.target.value })} className={`${fieldCls} text-xs font-mono`} /></td>
                       <td className="py-2"><input value={r.name} onChange={e => updateRow(i, { name: e.target.value })} className={`${fieldCls} text-xs`} /></td>

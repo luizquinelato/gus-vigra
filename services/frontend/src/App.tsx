@@ -14,6 +14,8 @@ import PagesPage from './pages/PagesPage'
 import OutboxPage from './pages/OutboxPage'
 import CategoriesPage from './pages/CategoriesPage'
 import TagsPage from './pages/TagsPage'
+import FamiliesPage from './pages/FamiliesPage'
+import CharacteristicsPage from './pages/CharacteristicsPage'
 import ProductsPage from './pages/ProductsPage'
 import PriceTablesPage from './pages/PriceTablesPage'
 import PriceTableItemsPage from './pages/PriceTableItemsPage'
@@ -159,6 +161,8 @@ function AuthenticatedApp() {
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/cadastros/categorias" element={<CategoriesPage />} />
           <Route path="/cadastros/tags" element={<TagsPage />} />
+          <Route path="/cadastros/familias" element={<FamiliesPage />} />
+          <Route path="/cadastros/caracteristicas" element={<CharacteristicsPage />} />
           <Route path="/cadastros/produtos" element={<ProductsPage />} />
           <Route path="/cadastros/tabelas-preco" element={<PriceTablesPage />} />
           <Route path="/cadastros/tabelas-preco/:tableId/items" element={<PriceTableItemsPage />} />

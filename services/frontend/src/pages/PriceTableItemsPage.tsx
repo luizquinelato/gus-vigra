@@ -3,8 +3,8 @@ import { Link, useParams } from 'react-router-dom'
 import { ArrowLeft, FloppyDisk, MagnifyingGlass, Trash } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import {
-  priceTableItemsApi, priceTablesApi, productsApi,
-  type PriceTableItemRead, type PriceTableRead, type ProductRead,
+  familiesApi, priceTableItemsApi, priceTablesApi, productsApi,
+  type FamilyRead, type PriceTableItemRead, type PriceTableRead, type ProductRead,
 } from '../services/cadastrosApi'
 
 const fieldCls = 'w-full px-2 py-1 text-sm rounded border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 outline-none focus:border-[var(--color-1)]'
@@ -15,6 +15,7 @@ export default function PriceTableItemsPage() {
   const [table, setTable] = useState<PriceTableRead | null>(null)
   const [products, setProducts] = useState<ProductRead[]>([])
   const [items, setItems] = useState<PriceTableItemRead[]>([])
+  const [families, setFamilies] = useState<FamilyRead[]>([])
   const [drafts, setDrafts] = useState<Record<number, string>>({}) // product_id -> preço digitado
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<number | null>(null)
@@ -26,9 +27,10 @@ export default function PriceTableItemsPage() {
       priceTablesApi.get(tid),
       productsApi.list({ only_active: true, limit: 500 }),
       priceTableItemsApi.listByTable(tid, { only_active: false }),
+      familiesApi.list({ only_active: true }),
     ])
-      .then(([t, ps, its]) => {
-        setTable(t); setProducts(ps); setItems(its); setDrafts({})
+      .then(([t, ps, its, fs]) => {
+        setTable(t); setProducts(ps); setItems(its); setFamilies(fs); setDrafts({})
       })
       .catch(() => toast.error('Erro ao carregar tabela.'))
       .finally(() => setLoading(false))
@@ -41,13 +43,23 @@ export default function PriceTableItemsPage() {
     return m
   }, [items])
 
+  const familyById = useMemo(() => {
+    const m = new Map<number, FamilyRead>()
+    families.forEach(f => m.set(f.id, f))
+    return m
+  }, [families])
+  function familyLabel(id: number | null): string {
+    if (id == null) return ''
+    return familyById.get(id)?.name ?? `#${id}`
+  }
+
   const filtered = useMemo(() => {
     const f = filter.toLowerCase()
     if (!f) return products
     return products.filter(p =>
       p.code.toLowerCase().includes(f) ||
       p.name.toLowerCase().includes(f) ||
-      (p.family ?? '').toLowerCase().includes(f),
+      familyLabel(p.family_id).toLowerCase().includes(f),
     )
   }, [products, filter])
 
@@ -126,7 +138,7 @@ export default function PriceTableItemsPage() {
                     <td className="py-2 pl-3 font-mono text-xs text-gray-600 dark:text-gray-300">{p.code}</td>
                     <td className="py-2">
                       <p className="font-semibold text-gray-800 dark:text-gray-100">{p.name}</p>
-                      <p className="text-xs text-gray-400">{p.family ? `Família: ${p.family}` : ''}</p>
+                      <p className="text-xs text-gray-400">{p.family_id != null ? `Família: ${familyLabel(p.family_id)}` : ''}</p>
                     </td>
                     <td className="py-2 text-right text-gray-500 dark:text-gray-400">{Number(p.price).toFixed(2)}</td>
                     <td className="py-2 text-right">
