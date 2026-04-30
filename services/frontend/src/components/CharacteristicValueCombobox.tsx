@@ -12,7 +12,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { CaretDown, MagnifyingGlass, Plus, Spinner, X } from '@phosphor-icons/react'
 import type { CharacteristicType, CharacteristicValueRead } from '../services/cadastrosApi'
 
-const fieldCls = 'w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 outline-none focus:border-[var(--color-1)]'
+// min-h-[38px] + box-border garante altura idêntica entre o <button> fechado e
+// o <div>+<input> aberto, evitando shift sub-pixel ao trocar de estado.
+const fieldCls = 'w-full px-3 py-2 text-sm box-border min-h-[38px] rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 outline-none focus:border-[var(--color-1)]'
+const openWrapperCls = 'w-full flex items-center gap-2 box-border min-h-[38px] rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 outline-none focus-within:border-[var(--color-1)]'
 
 interface CreateBody {
   value: string
@@ -101,6 +104,21 @@ export function CharacteristicValueCombobox({
     return null
   }
 
+  // Para cor, exibe "Nome — #HEX" (excessão pedida pelo usuário); demais tipos só nome.
+  // items-center (não baseline) evita shift sub-pixel quando duas font-sizes
+  // diferentes são alinhadas pelo baseline.
+  function renderOptionLabel(o: CharacteristicValueRead) {
+    if (characteristicType === 'color' && o.hex_color) {
+      return (
+        <span className="inline-flex items-center gap-2">
+          <span>{o.value}</span>
+          <span className="font-mono text-[10px] text-gray-400 uppercase">{o.hex_color}</span>
+        </span>
+      )
+    }
+    return <span>{o.value}</span>
+  }
+
   return (
     <div ref={wrapperRef} className="relative">
       {!open ? (
@@ -108,7 +126,7 @@ export function CharacteristicValueCombobox({
           className={`${fieldCls} flex items-center justify-between text-left disabled:opacity-50`}>
           <span className="flex items-center gap-2">
             {selected && renderOptionExtra(selected)}
-            <span className={selected ? '' : 'text-gray-400'}>{selected?.value || 'Valor…'}</span>
+            {selected ? renderOptionLabel(selected) : <span className="text-gray-400">Valor…</span>}
           </span>
           <span className="flex items-center gap-1 text-gray-400">
             {selected && (
@@ -118,25 +136,25 @@ export function CharacteristicValueCombobox({
           </span>
         </button>
       ) : (
-        <div className={`${fieldCls} flex items-center gap-2 p-0`}>
+        <div className={openWrapperCls}>
           <MagnifyingGlass size={14} className="ml-3 text-gray-400 shrink-0" />
           <input autoFocus value={query} onChange={e => setQuery(e.target.value)}
             placeholder="Buscar ou criar…" disabled={creating}
-            onKeyDown={e => { if (e.key === 'Escape') setOpen(false) }}
+            onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); setOpen(false) } }}
             className="flex-1 py-2 text-sm bg-transparent outline-none text-gray-800 dark:text-gray-100 disabled:opacity-50" />
           {creating && <Spinner size={14} className="mr-3 animate-spin text-gray-400" />}
         </div>
       )}
 
       {open && (
-        <div className="absolute z-20 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-72 overflow-y-auto">
+        <div className="absolute z-20 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
           {filtered.length === 0 && !showCreateOption && (
             <p className="px-3 py-2 text-xs text-gray-400">Nenhum valor encontrado.</p>
           )}
           {filtered.map(opt => (
             <button key={opt.id} type="button" onClick={() => pickId(opt.id)}
               className={`w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 ${opt.id === value ? 'font-semibold text-[var(--color-1)]' : 'text-gray-700 dark:text-gray-200'}`}>
-              <span className="inline-flex items-center gap-2">{renderOptionExtra(opt)}{opt.value}</span>
+              <span className="inline-flex items-center gap-2">{renderOptionExtra(opt)}{renderOptionLabel(opt)}</span>
             </button>
           ))}
           {showCreateOption && !pendingCreate && (

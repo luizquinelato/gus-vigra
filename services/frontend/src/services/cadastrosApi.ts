@@ -26,23 +26,23 @@ export interface TagWrite { name: string; slug: string }
 // ── Famílias ─────────────────────────────────────────────────────────────────
 
 export interface FamilyRead {
-  id: number; name: string; sort_order: number
+  id: number; name: string
   tenant_id: number; active: boolean
   created_at: string; last_updated_at: string
 }
-export interface FamilyWrite { name: string; sort_order?: number }
+export interface FamilyWrite { name: string }
 
 // ── Características & Valores ────────────────────────────────────────────────
 
 export type CharacteristicType = 'text' | 'color' | 'number'
 
 export interface CharacteristicRead {
-  id: number; name: string; type: CharacteristicType; sort_order: number
+  id: number; name: string; type: CharacteristicType
   tenant_id: number; active: boolean
   created_at: string; last_updated_at: string
 }
 export interface CharacteristicWrite {
-  name: string; type?: CharacteristicType; sort_order?: number
+  name: string; type?: CharacteristicType
 }
 
 export interface CharacteristicValueRead {
@@ -50,7 +50,8 @@ export interface CharacteristicValueRead {
   hex_color: string | null
   numeric_value: string | null
   unit: string | null
-  sort_order: number; characteristic_id: number
+  characteristic_id: number
+  tenant_id: number
   active: boolean; created_at: string; last_updated_at: string
 }
 export interface CharacteristicValueWrite {
@@ -58,7 +59,6 @@ export interface CharacteristicValueWrite {
   hex_color?: string | null
   numeric_value?: string | null
   unit?: string | null
-  sort_order?: number
 }
 
 export type ProductType = 'simple' | 'kit'
@@ -106,6 +106,7 @@ export interface CharacteristicLinkWrite {
 export interface KitItemRead {
   id: number; quantity: string
   kit_id: number; component_id: number
+  tenant_id: number
   active: boolean; created_at: string; last_updated_at: string
 }
 export interface KitItemWrite { component_id: number; quantity?: string }
@@ -132,6 +133,7 @@ export interface PriceTableWrite { name: string; type?: PriceTableType; discount
 
 export interface PriceTableItemRead {
   id: number; price: string; price_table_id: number; product_id: number
+  tenant_id: number
   active: boolean; created_at: string; last_updated_at: string
 }
 export interface PriceTableItemWrite {
@@ -265,6 +267,8 @@ export const productImagesApi = {
   },
   listByProduct: (productId: number, params?: Record<string, unknown>) =>
     apiClient.get<ProductImageRead[]>(`${BASE}/products/${productId}/images`, { params }).then(r => r.data),
+  listCovers: () =>
+    apiClient.get<{ product_id: number; url: string }[]>(`${BASE}/products/covers`).then(r => r.data),
   attach: (productId: number, body: ProductImageWrite) =>
     apiClient.post<ProductImageRead>(`${BASE}/products/${productId}/images`, body).then(r => r.data),
   patch: (imageId: number, body: { alt_text?: string | null; sort_order?: number; active?: boolean }) =>

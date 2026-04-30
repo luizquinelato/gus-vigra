@@ -138,7 +138,7 @@ export default function ColorSettingsPage() {
           </span>
         </div>
 
-        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm p-5">
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm p-5 transition-colors hover:border-[var(--color-1)]">
           {/* Semânticas */}
           <p className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">Semânticas</p>
           <div className="flex gap-3 mb-5">

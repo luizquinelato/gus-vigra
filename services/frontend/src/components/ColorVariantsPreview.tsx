@@ -87,7 +87,7 @@ function Panel({ variant, label, isDark }: { variant: ColorVariantFull; label: s
 
 export default function ColorVariantsPreview({ lightVariants, darkVariants }: Props) {
   return (
-    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm p-5">
+    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm p-5 transition-colors hover:border-[var(--color-1)]">
       {LEVELS.map((lvl, i) => {
         const meta = LEVEL_META[lvl]
         return (

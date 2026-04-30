@@ -2,7 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { CaretDown, MagnifyingGlass, Plus, Spinner, X } from '@phosphor-icons/react'
 import { familiesApi, type FamilyRead } from '../services/cadastrosApi'
 
-const fieldCls = 'w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 outline-none focus:border-[var(--color-1)]'
+// h-[38px] (altura fixa) + mesmo elemento <div> nos dois estados eliminam
+// qualquer shift visual ao alternar fechado ↔ aberto.
+const fieldCls = 'w-full px-3 text-sm box-border h-[38px] rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 outline-none focus:border-[var(--color-1)]'
+const openWrapperCls = 'w-full flex items-center gap-2 box-border h-[38px] rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 outline-none focus-within:border-[var(--color-1)]'
 
 interface Props {
   value: number | null
@@ -11,12 +14,16 @@ interface Props {
    *  o componente chama `onCreated` para o pai mesclar no catálogo. */
   options: FamilyRead[]
   onCreated?: (created: FamilyRead) => void
+  /** Override do "Criar família": se fornecido, substitui a chamada direta ao
+   *  endpoint. Útil para criar família apenas quando o formulário pai for salvo
+   *  (deferred save). Quando informado, `onCreated` não é chamado. */
+  onCreate?: (name: string) => Promise<FamilyRead>
   placeholder?: string
   allowClear?: boolean
 }
 
 export function FamilyCombobox({
-  value, onChange, options, onCreated, placeholder, allowClear = true,
+  value, onChange, options, onCreated, onCreate, placeholder, allowClear = true,
 }: Props) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -58,8 +65,8 @@ export function FamilyCombobox({
   async function createAndPick(name: string) {
     setCreating(true); setError(null)
     try {
-      const created = await familiesApi.create({ name })
-      onCreated?.(created)
+      const created = onCreate ? await onCreate(name) : await familiesApi.create({ name })
+      if (!onCreate) onCreated?.(created)
       pickId(created.id)
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Erro ao criar família.'
@@ -72,8 +79,13 @@ export function FamilyCombobox({
   return (
     <div ref={wrapperRef} className="relative">
       {!open ? (
-        <button type="button" onClick={() => { setOpen(true); setQuery('') }}
-          className={`${fieldCls} flex items-center justify-between text-left`}>
+        // <div role="button"> em vez de <button> nativo: garante altura/estilo
+        // intrínseco idênticos ao wrapper aberto (também <div>), eliminando o
+        // shift visual percebido pelo usuário ao clicar no campo.
+        <div role="button" tabIndex={0}
+          onClick={() => { setOpen(true); setQuery('') }}
+          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(true); setQuery('') } }}
+          className={`${fieldCls} flex items-center justify-between text-left cursor-pointer`}>
           <span className={selected ? '' : 'text-gray-400'}>
             {selected?.name || placeholder || 'Selecionar…'}
           </span>
@@ -83,9 +95,9 @@ export function FamilyCombobox({
             )}
             <CaretDown size={14} />
           </span>
-        </button>
+        </div>
       ) : (
-        <div className={`${fieldCls} flex items-center gap-2 p-0`}>
+        <div className={openWrapperCls}>
           <MagnifyingGlass size={14} className="ml-3 text-gray-400 shrink-0" />
           <input autoFocus value={query} onChange={e => setQuery(e.target.value)}
             placeholder="Buscar ou digitar nova família…"
@@ -98,9 +110,11 @@ export function FamilyCombobox({
                 if (exact) pickId(exact.id)
                 else void createAndPick(queryTrim)
               }
-              if (e.key === 'Escape') { setOpen(false) }
+              // preventDefault marca defaultPrevented=true → o hook
+              // useModalShortcuts ignora e não fecha o modal pai.
+              if (e.key === 'Escape') { e.preventDefault(); setOpen(false) }
             }}
-            className="flex-1 py-2 text-sm bg-transparent outline-none text-gray-800 dark:text-gray-100 disabled:opacity-50" />
+            className="flex-1 text-sm bg-transparent outline-none text-gray-800 dark:text-gray-100 disabled:opacity-50" />
           {creating && <Spinner size={14} className="mr-3 animate-spin text-gray-400" />}
         </div>
       )}

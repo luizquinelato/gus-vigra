@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import Cropper, { type Area } from 'react-easy-crop'
 import { Crop, FloppyDisk, X } from '@phosphor-icons/react'
+import { useModalShortcuts } from '../hooks/useModalShortcuts'
 
 interface Props {
   src: string
@@ -58,13 +59,22 @@ export function ImageCropModal({ src, fileName, onClose, onConfirm }: Props) {
     } finally { setBusy(false) }
   }
 
+  useModalShortcuts({
+    onClose: () => { if (!busy) onClose() },
+    onSubmit: () => { if (!busy && pixels) void handleConfirm() },
+  })
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-2xl p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100 inline-flex items-center gap-2">
-            <Crop size={18} /> Ajustar imagem
-          </h2>
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg flex items-center justify-center"
+              style={{ backgroundColor: 'var(--color-edit)', color: 'var(--on-color-edit)' }}>
+              <Crop size={18} />
+            </div>
+            <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100">Ajustar imagem</h2>
+          </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><X size={20} /></button>
         </div>
 
@@ -105,7 +115,8 @@ export function ImageCropModal({ src, fileName, onClose, onConfirm }: Props) {
         </div>
 
         <div className="flex justify-end gap-2 mt-6">
-          <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">Cancelar</button>
+          <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg text-white font-medium hover:opacity-90 transition-opacity"
+            style={{ backgroundColor: 'var(--color-cancel)' }}>Cancelar</button>
           <button onClick={handleConfirm} disabled={busy || !pixels}
             className="inline-flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold border-none"
             style={{ background: 'var(--color-save)', color: 'var(--on-color-save)', opacity: busy ? 0.6 : 1, cursor: busy ? 'not-allowed' : 'pointer' }}>

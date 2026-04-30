@@ -65,8 +65,8 @@
   --color-update:  var(--color-1);          /* atualizar → cor primária da marca */
   --on-color-update: var(--on-color-1);
 
-  --color-edit:    var(--color-warning);
-  --on-color-edit: var(--on-color-warning);
+  --color-edit:    var(--color-info);          /* editar → azul universal (alinhado ao plumo) */
+  --on-color-edit: var(--on-color-info);
 
   --color-delete:  var(--color-danger);
   --on-color-delete: var(--on-color-danger);

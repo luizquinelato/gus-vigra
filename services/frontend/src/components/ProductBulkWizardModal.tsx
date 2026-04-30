@@ -10,6 +10,8 @@ import { slugify } from '../utils/slug'
 import { CharacteristicCombobox } from './CharacteristicCombobox'
 import { CharacteristicValueCombobox } from './CharacteristicValueCombobox'
 import { FamilyCombobox } from './FamilyCombobox'
+import { CurrencyInput } from './ProductFormModal'
+import { useModalShortcuts } from '../hooks/useModalShortcuts'
 
 const fieldCls = 'w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 outline-none focus:border-[var(--color-1)]'
 
@@ -162,6 +164,12 @@ export function ProductBulkWizardModal({
   }
   function removeRow(i: number) { setRows(rs => rs.filter((_, k) => k !== i)) }
 
+  // Enter no passo 1 avança para a revisão; no passo 2 dispara o Salvar.
+  useModalShortcuts({
+    onClose,
+    onSubmit: () => { if (step === 1) buildRows(); else void handleSave() },
+  })
+
   async function handleSave() {
     if (rows.length === 0) { toast.error('Nenhum produto para criar.'); return }
     if (rows.some(r => !r.code.trim() || !r.name.trim())) { toast.error('Todos precisam de código e nome.'); return }
@@ -187,16 +195,23 @@ export function ProductBulkWizardModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-3xl p-6 max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100 inline-flex items-center gap-2">
-            <MagicWand size={18} /> Wizard de combinações {step === 2 && <span className="text-xs text-gray-400 font-normal">· revisar</span>}
-          </h2>
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg flex items-center justify-center"
+              style={{ backgroundColor: 'var(--color-create)', color: 'var(--on-color-create)' }}>
+              <MagicWand size={18} />
+            </div>
+            <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100">
+              Wizard de combinações {step === 2 && <span className="text-xs text-gray-400 font-normal">· revisar</span>}
+            </h2>
+          </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><X size={20} /></button>
         </div>
+        <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-3"><span className="text-red-500">*</span> campos obrigatórios</p>
 
         {step === 1 ? (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Família</span>
+              <div className="col-span-2"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Família<span className="text-red-500 ml-0.5">*</span></span>
                 <div className="mt-1">
                   <FamilyCombobox value={base.family_id}
                     onChange={id => setBase(b => ({ ...b, family_id: id }))}
@@ -209,9 +224,9 @@ export function ProductBulkWizardModal({
               <label className="block"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Prefixo do nome</span>
                 <input value={base.namePrefix} onChange={e => setBase(b => ({ ...b, namePrefix: e.target.value }))} className={`${fieldCls} mt-1`} placeholder="ex: Café Especial" /></label>
               <label className="block"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Preço base</span>
-                <input type="number" step="0.01" value={base.price} onChange={e => setBase(b => ({ ...b, price: e.target.value }))} className={`${fieldCls} mt-1`} /></label>
+                <div className="mt-1"><CurrencyInput value={base.price} onChange={v => setBase(b => ({ ...b, price: v }))} maxIntDigits={8} /></div></label>
               <label className="block"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Custo base</span>
-                <input type="number" step="0.01" value={base.cost} onChange={e => setBase(b => ({ ...b, cost: e.target.value }))} className={`${fieldCls} mt-1`} /></label>
+                <div className="mt-1"><CurrencyInput value={base.cost} onChange={v => setBase(b => ({ ...b, cost: v }))} maxIntDigits={8} /></div></label>
               <label className="block"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Unidade</span>
                 <input value={base.unit} onChange={e => setBase(b => ({ ...b, unit: e.target.value }))} className={`${fieldCls} mt-1`} /></label>
               <label className="block"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Categoria</span>
@@ -292,8 +307,8 @@ export function ProductBulkWizardModal({
               <table className="w-full text-sm">
                 <thead><tr className="border-b border-gray-100 dark:border-gray-700">
                   <th className="text-left pb-2 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300">Características</th>
-                  <th className="text-left pb-2 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300 w-40">Código</th>
-                  <th className="text-left pb-2 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300">Nome</th>
+                  <th className="text-left pb-2 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300 w-40">Código<span className="text-red-500 ml-0.5">*</span></th>
+                  <th className="text-left pb-2 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300">Nome<span className="text-red-500 ml-0.5">*</span></th>
                   <th className="text-right pb-2 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300 w-24">Preço</th>
                   <th className="w-10" />
                 </tr></thead>
@@ -305,7 +320,7 @@ export function ProductBulkWizardModal({
                       </td>
                       <td className="py-2"><input value={r.code} onChange={e => updateRow(i, { code: e.target.value })} className={`${fieldCls} text-xs font-mono`} /></td>
                       <td className="py-2"><input value={r.name} onChange={e => updateRow(i, { name: e.target.value })} className={`${fieldCls} text-xs`} /></td>
-                      <td className="py-2"><input type="number" step="0.01" value={r.price} onChange={e => updateRow(i, { price: e.target.value })} className={`${fieldCls} text-xs text-right`} /></td>
+                      <td className="py-2"><CurrencyInput value={r.price} onChange={v => updateRow(i, { price: v })} maxIntDigits={8} /></td>
                       <td className="py-2 text-right pr-2"><button onClick={() => removeRow(i)} className="text-gray-400 hover:text-red-600"><Trash size={14} /></button></td>
                     </tr>
                   ))}
@@ -322,7 +337,8 @@ export function ProductBulkWizardModal({
             </button>
           ) : <span />}
           <div className="flex gap-2">
-            <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">Cancelar</button>
+            <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg text-white font-medium hover:opacity-90 transition-opacity"
+              style={{ backgroundColor: 'var(--color-cancel)' }}>Cancelar</button>
             {step === 1 ? (
               <button onClick={buildRows}
                 className="inline-flex items-center gap-1 px-5 py-2 rounded-lg text-sm font-semibold border-none"

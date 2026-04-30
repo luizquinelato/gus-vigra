@@ -224,7 +224,7 @@ export default function ColorCustomizerUnified({
       {/* ── Color edit panels ── */}
       <section className="mb-6">
         <h3 className={sectionHead}>{isCustom ? 'Personalizar Cores' : 'Cores (somente leitura)'}</h3>
-        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm p-5">
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm p-5 transition-colors hover:border-[var(--color-1)]">
           <div className="grid grid-cols-2 gap-4">
             <ColorPanel label="☀️ Claro"  colors={light} editable={isCustom} isDark={false} onChange={(k,v) => setColor('light',k,v)} />
             <ColorPanel label="🌙 Escuro" colors={dark}  editable={isCustom} isDark={true}  onChange={(k,v) => setColor('dark', k,v)} />

@@ -18,7 +18,7 @@ interface OutboxEvent {
 
 function StatCard({ icon: Icon, label, value, color }: { icon: React.ElementType; label: string; value: number; color: string }) {
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center gap-4">
+    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center gap-4 transition-colors hover:border-[var(--color-1)]">
       <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: `${color}22` }}>
         <Icon size={20} style={{ color }} />
       </div>
@@ -141,7 +141,7 @@ export default function OutboxPage() {
       </div>
 
       {/* Pipeline test */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center justify-between gap-4">
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-5 flex items-center justify-between gap-4 transition-colors hover:border-[var(--color-1)]">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--color-1)22' }}>
             <Play size={18} style={{ color: 'var(--color-1)' }} />
@@ -202,7 +202,7 @@ export default function OutboxPage() {
             Atualizar
           </button>
         </div>
-        <section className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm mb-6">
+        <section className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm mb-6 transition-colors hover:border-[var(--color-1)]">
           {loading ? (
             <p className="text-sm text-gray-400 p-6">Carregando...</p>
           ) : recent.length === 0 ? (
@@ -247,7 +247,7 @@ export default function OutboxPage() {
           </div>
         </div>
 
-        <section className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+        <section className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm transition-colors hover:border-[var(--color-1)]">
           {loading ? (
             <p className="text-sm text-gray-400 p-6">Carregando...</p>
           ) : deadLetters.length === 0 ? (

@@ -171,7 +171,7 @@ export default function RolesPage() {
         </button>
       </div>
 
-      <section className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-6">
+      <section className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-6 transition-colors hover:border-[var(--color-1)]">
         {loading ? (
           <p className="text-sm text-gray-400 dark:text-gray-500">Carregando...</p>
         ) : (

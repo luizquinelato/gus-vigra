@@ -115,26 +115,26 @@ export default function PriceTableItemsPage() {
       <div className="relative">
         <MagnifyingGlass size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
         <input type="text" placeholder="Filtrar por código, nome ou família…" value={filter} onChange={e => setFilter(e.target.value)}
-          className="w-full pl-8 pr-4 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 outline-none focus:border-[var(--color-1)]" />
+          className="w-full pl-8 pr-4 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 outline-none transition-colors hover:border-[var(--color-1)] focus:border-[var(--color-1)]" />
       </div>
 
-      <section className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-6">
+      <section className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-6 transition-colors hover:border-[var(--color-1)]">
         {loading ? <p className="text-sm text-gray-400">Carregando...</p> : filtered.length === 0 ? <p className="text-sm text-gray-400">Nenhum produto encontrado.</p> : (
           <table className="w-full text-sm">
-            <thead><tr className="border-b border-gray-100 dark:border-gray-700">
-              <th className="text-left pb-2 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300 w-32">Código</th>
-              <th className="text-left pb-2 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300">Produto</th>
-              <th className="text-right pb-2 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300 w-28">Preço padrão</th>
-              <th className="text-right pb-2 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300 w-40">Preço nesta tabela</th>
+            <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700"><tr>
+              <th className="text-left py-2 pl-3 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300 w-32">Código</th>
+              <th className="text-left py-2 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300">Produto</th>
+              <th className="text-right py-2 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300 w-28">Preço padrão</th>
+              <th className="text-right py-2 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300 w-40">Preço nesta tabela</th>
               <th className="w-24" />
             </tr></thead>
-            <tbody>
-              {filtered.map((p, i) => {
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+              {filtered.map((p) => {
                 const existing = itemsByProduct.get(p.id)
                 const draftValue = drafts[p.id] ?? (existing && existing.active ? existing.price : '')
                 const dirty = drafts[p.id] !== undefined && drafts[p.id] !== (existing?.price ?? '')
                 return (
-                  <tr key={p.id} className={`hover:bg-gray-100 dark:hover:bg-gray-700/50 ${i % 2 === 0 ? 'bg-gray-50 dark:bg-gray-700/30' : ''}`}>
+                  <tr key={p.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                     <td className="py-2 pl-3 font-mono text-xs text-gray-600 dark:text-gray-300">{p.code}</td>
                     <td className="py-2">
                       <p className="font-semibold text-gray-800 dark:text-gray-100">{p.name}</p>
@@ -153,7 +153,7 @@ export default function PriceTableItemsPage() {
                         <FloppyDisk size={16} className={saving === p.id ? 'animate-spin' : undefined} />
                       </button>
                       {existing && existing.active && (
-                        <button onClick={() => handleRemove(existing)} className="text-gray-400 hover:text-red-600 p-1 ml-1" title="Remover preço">
+                        <button onClick={() => handleRemove(existing)} className="p-2 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors ml-1" title="Remover preço">
                           <Trash size={16} />
                         </button>
                       )}

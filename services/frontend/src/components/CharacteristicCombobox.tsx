@@ -9,7 +9,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { CaretDown, MagnifyingGlass, Plus, Spinner, X } from '@phosphor-icons/react'
 import type { CharacteristicRead, CharacteristicType } from '../services/cadastrosApi'
 
-const fieldCls = 'w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 outline-none focus:border-[var(--color-1)]'
+// min-h-[38px] + box-border garante altura idêntica entre o <button> fechado e
+// o <div>+<input> aberto, evitando shift sub-pixel ao trocar de estado.
+const fieldCls = 'w-full px-3 py-2 text-sm box-border min-h-[38px] rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 outline-none focus:border-[var(--color-1)]'
+const openWrapperCls = 'w-full flex items-center gap-2 box-border min-h-[38px] rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 outline-none focus-within:border-[var(--color-1)]'
 
 const TYPE_LABEL: Record<CharacteristicType, string> = { text: 'Texto', color: 'Cor', number: 'Número' }
 
@@ -91,11 +94,11 @@ export function CharacteristicCombobox({
           </span>
         </button>
       ) : (
-        <div className={`${fieldCls} flex items-center gap-2 p-0`}>
+        <div className={openWrapperCls}>
           <MagnifyingGlass size={14} className="ml-3 text-gray-400 shrink-0" />
           <input autoFocus value={query} onChange={e => setQuery(e.target.value)}
             placeholder="Buscar ou criar…" disabled={creating}
-            onKeyDown={e => { if (e.key === 'Escape') setOpen(false) }}
+            onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); setOpen(false) } }}
             className="flex-1 py-2 text-sm bg-transparent outline-none text-gray-800 dark:text-gray-100 disabled:opacity-50" />
           {creating && <Spinner size={14} className="mr-3 animate-spin text-gray-400" />}
         </div>

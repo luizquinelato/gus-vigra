@@ -110,7 +110,7 @@ export function CharacteristicEditor({
             ? characteristics.find(c => c.id === row.characteristic_id)?.type as CharacteristicType | undefined
             : undefined
         return (
-          <div key={i} className="flex gap-2">
+          <div key={i} className="flex items-center gap-2">
             <div className="flex-1">
               <CharacteristicCombobox
                 value={row.characteristic_id}
