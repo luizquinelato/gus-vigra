@@ -59,8 +59,7 @@ def apply(conn) -> None:
         """)
 
         # 2. price_table_items
-        # Sem tenant_id direto — isolamento cascateia via price_table_id
-        # e product_id.
+        # tenant_id denormalizado para filtros rápidos sem JOIN com price_tables/products.
         cur.execute("""
             CREATE TABLE IF NOT EXISTS price_table_items (
                 -- 1. ID
@@ -70,7 +69,8 @@ def apply(conn) -> None:
                 -- 3. FKs internas
                 price_table_id  INTEGER       NOT NULL REFERENCES price_tables(id) ON DELETE CASCADE,
                 product_id      INTEGER       NOT NULL REFERENCES products(id)     ON DELETE CASCADE,
-                -- 4. Campos herdados (sem tenant_id — herda via FKs)
+                -- 4. Campos herdados
+                tenant_id       INTEGER       NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
                 active          BOOLEAN       DEFAULT TRUE,
                 created_at      TIMESTAMPTZ   DEFAULT NOW(),
                 last_updated_at TIMESTAMPTZ   DEFAULT NOW(),
@@ -79,6 +79,7 @@ def apply(conn) -> None:
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_price_table_items_table_id   ON price_table_items(price_table_id);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_price_table_items_product_id ON price_table_items(product_id);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_price_table_items_tenant_id  ON price_table_items(tenant_id);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_price_table_items_active     ON price_table_items(active);")
 
     logger.info("0007_cadastros_pricing applied.")

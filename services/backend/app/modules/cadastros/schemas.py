@@ -76,12 +76,10 @@ class TagOut(BaseModel):
 
 class FamilyCreate(BaseModel):
     name:       str = Field(..., max_length=80)
-    sort_order: int = 0
 
 
 class FamilyUpdate(BaseModel):
     name:       Optional[str] = Field(None, max_length=80)
-    sort_order: Optional[int] = None
     active:     Optional[bool] = None
 
 
@@ -89,7 +87,6 @@ class FamilyOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id:               int
     name:             str
-    sort_order:       int
     tenant_id:        int
     active:           bool
     created_at:       datetime
@@ -104,13 +101,11 @@ CharacteristicType = Literal["text", "color", "number"]
 class CharacteristicCreate(BaseModel):
     name:       str = Field(..., max_length=50)
     type:       CharacteristicType = "text"
-    sort_order: int = 0
 
 
 class CharacteristicUpdate(BaseModel):
     """`type` é imutável após criação (regra de negócio)."""
     name:       Optional[str] = Field(None, max_length=50)
-    sort_order: Optional[int] = None
     active:     Optional[bool] = None
 
 
@@ -119,7 +114,6 @@ class CharacteristicOut(BaseModel):
     id:               int
     name:             str
     type:             str
-    sort_order:       int
     tenant_id:        int
     active:           bool
     created_at:       datetime
@@ -131,7 +125,6 @@ class CharacteristicValueCreate(BaseModel):
     hex_color:     Optional[str] = Field(None, max_length=7)
     numeric_value: Optional[Decimal] = None
     unit:          Optional[str] = Field(None, max_length=20)
-    sort_order:    int = 0
 
 
 class CharacteristicValueUpdate(BaseModel):
@@ -139,7 +132,6 @@ class CharacteristicValueUpdate(BaseModel):
     hex_color:     Optional[str] = Field(None, max_length=7)
     numeric_value: Optional[Decimal] = None
     unit:          Optional[str] = Field(None, max_length=20)
-    sort_order:    Optional[int] = None
     active:        Optional[bool] = None
 
 
@@ -150,8 +142,8 @@ class CharacteristicValueOut(BaseModel):
     hex_color:         Optional[str]
     numeric_value:     Optional[Decimal]
     unit:              Optional[str]
-    sort_order:        int
     characteristic_id: int
+    tenant_id:         int
     active:            bool
     created_at:        datetime
     last_updated_at:   datetime
@@ -310,6 +302,7 @@ class KitItemOut(BaseModel):
     quantity:        Decimal
     kit_id:          int
     component_id:    int
+    tenant_id:       int
     active:          bool
     created_at:      datetime
     last_updated_at: datetime
@@ -355,11 +348,13 @@ class TagLinkCreate(BaseModel):
 
 class TagLinkOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    id:         int
-    product_id: int
-    tag_id:     int
-    active:     bool
-    created_at: datetime
+    id:              int
+    product_id:      int
+    tag_id:          int
+    tenant_id:       int
+    active:          bool
+    created_at:      datetime
+    last_updated_at: datetime
 
 
 # ── Tabelas de Preço ──────────────────────────────────────────────────────────
@@ -412,6 +407,7 @@ class PriceTableItemOut(BaseModel):
     price:           Decimal
     price_table_id:  int
     product_id:      int
+    tenant_id:       int
     active:          bool
     created_at:      datetime
     last_updated_at: datetime

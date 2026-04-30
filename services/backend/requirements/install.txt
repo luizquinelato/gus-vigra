@@ -21,3 +21,4 @@ pika
 python-dotenv
 python-multipart
 slowapi
+bleach[css]

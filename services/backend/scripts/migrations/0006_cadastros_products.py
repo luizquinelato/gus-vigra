@@ -40,6 +40,37 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+# Conjunto mínimo de características reaproveitáveis por MEI/MPE.
+# Formato: (name, type, [(value, hex_color, numeric_value, unit), ...])
+DEFAULT_CHARACTERISTICS = [
+    ("Cor", "color", [
+        ("Preto",    "#000000", None, None),
+        ("Branco",   "#FFFFFF", None, None),
+        ("Cinza",    "#808080", None, None),
+        ("Vermelho", "#E53935", None, None),
+        ("Azul",     "#1E88E5", None, None),
+        ("Verde",    "#43A047", None, None),
+        ("Amarelo",  "#FDD835", None, None),
+        ("Rosa",     "#EC407A", None, None),
+        ("Marrom",   "#6D4C41", None, None),
+        ("Bege",     "#D7CCC8", None, None),
+    ]),
+    ("Tamanho", "text", [
+        ("PP", None, None, None),
+        ("P",  None, None, None),
+        ("M",  None, None, None),
+        ("G",  None, None, None),
+        ("GG", None, None, None),
+        ("XG", None, None, None),
+    ]),
+    ("Voltagem", "text", [
+        ("110V",   None, None, None),
+        ("220V",   None, None, None),
+        ("Bivolt", None, None, None),
+    ]),
+]
+
+
 def apply(conn) -> None:
     logger.info("Applying 0006_cadastros_products...")
     with conn.cursor() as cur:
@@ -52,7 +83,6 @@ def apply(conn) -> None:
                 id              SERIAL       PRIMARY KEY,
                 -- 2. Campos próprios
                 name            VARCHAR(80)  NOT NULL,
-                sort_order      INTEGER      NOT NULL DEFAULT 0,
                 -- 3. Campos herdados
                 tenant_id       INTEGER      NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
                 active          BOOLEAN      DEFAULT TRUE,
@@ -74,7 +104,6 @@ def apply(conn) -> None:
                 -- 2. Campos próprios
                 name            VARCHAR(50)  NOT NULL,
                 type            VARCHAR(10)  NOT NULL DEFAULT 'text',
-                sort_order      INTEGER      NOT NULL DEFAULT 0,
                 -- 3. Campos herdados
                 tenant_id       INTEGER      NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
                 active          BOOLEAN      DEFAULT TRUE,
@@ -90,7 +119,7 @@ def apply(conn) -> None:
         # 3. product_characteristic_values
         # Por tipo do parent: text → só `value`; color → `value`+`hex_color`;
         # number → `value`+`numeric_value`+`unit?`. Validação refinada no router.
-        # Sem tenant_id direto — isolamento cascateia via characteristic_id.
+        # tenant_id denormalizado para filtros rápidos sem JOIN com characteristic.
         cur.execute("""
             CREATE TABLE IF NOT EXISTS product_characteristic_values (
                 -- 1. ID
@@ -100,10 +129,10 @@ def apply(conn) -> None:
                 hex_color         VARCHAR(7),
                 numeric_value     NUMERIC(14,4),
                 unit              VARCHAR(20),
-                sort_order        INTEGER       NOT NULL DEFAULT 0,
                 -- 3. FKs internas
                 characteristic_id INTEGER       NOT NULL REFERENCES product_characteristics(id) ON DELETE CASCADE,
-                -- 4. Campos herdados (sem tenant_id — herda via characteristic_id)
+                -- 4. Campos herdados
+                tenant_id         INTEGER       NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
                 active            BOOLEAN       DEFAULT TRUE,
                 created_at        TIMESTAMPTZ   DEFAULT NOW(),
                 last_updated_at   TIMESTAMPTZ   DEFAULT NOW(),
@@ -113,6 +142,7 @@ def apply(conn) -> None:
             );
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_product_characteristic_values_characteristic_id ON product_characteristic_values(characteristic_id);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_product_characteristic_values_tenant_id        ON product_characteristic_values(tenant_id);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_product_characteristic_values_active            ON product_characteristic_values(active);")
 
         # 4. products  (modelo flat)
@@ -165,7 +195,7 @@ def apply(conn) -> None:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_products_barcode     ON products(barcode);")
 
         # 4. product_kit_items  (composição quando type='kit')
-        # Sem tenant_id — isolamento cascateia via FKs.
+        # tenant_id denormalizado para filtros rápidos sem JOIN com products.
         cur.execute("""
             CREATE TABLE IF NOT EXISTS product_kit_items (
                 -- 1. ID
@@ -175,7 +205,8 @@ def apply(conn) -> None:
                 -- 3. FKs internas
                 kit_id          INTEGER       NOT NULL REFERENCES products(id) ON DELETE CASCADE,
                 component_id    INTEGER       NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
-                -- 4. Campos herdados (sem tenant_id — herda via FKs)
+                -- 4. Campos herdados
+                tenant_id       INTEGER       NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
                 active          BOOLEAN       DEFAULT TRUE,
                 created_at      TIMESTAMPTZ   DEFAULT NOW(),
                 last_updated_at TIMESTAMPTZ   DEFAULT NOW(),
@@ -185,6 +216,7 @@ def apply(conn) -> None:
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_product_kit_items_kit_id       ON product_kit_items(kit_id);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_product_kit_items_component_id ON product_kit_items(component_id);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_product_kit_items_tenant_id    ON product_kit_items(tenant_id);")
 
         # 6. product_images
         # url: caminho público (/static/products/{tenant_id}/{filename}).
@@ -243,7 +275,7 @@ def apply(conn) -> None:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_pcl_tenant_id         ON product_characteristic_links(tenant_id);")
 
         # 8. product_tag_links (M:N)
-        # Sem tenant_id direto — isolamento cascateia via product_id e tag_id.
+        # tenant_id denormalizado para filtros rápidos sem JOIN com products/tags.
         cur.execute("""
             CREATE TABLE IF NOT EXISTS product_tag_links (
                 -- 1. ID
@@ -251,7 +283,8 @@ def apply(conn) -> None:
                 -- 2. FKs internas
                 product_id      INTEGER     NOT NULL REFERENCES products(id)     ON DELETE CASCADE,
                 tag_id          INTEGER     NOT NULL REFERENCES product_tags(id) ON DELETE CASCADE,
-                -- 3. Campos herdados (sem tenant_id — herda via FKs)
+                -- 3. Campos herdados
+                tenant_id       INTEGER     NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
                 active          BOOLEAN     DEFAULT TRUE,
                 created_at      TIMESTAMPTZ DEFAULT NOW(),
                 last_updated_at TIMESTAMPTZ DEFAULT NOW(),
@@ -260,6 +293,43 @@ def apply(conn) -> None:
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_product_tag_links_product_id ON product_tag_links(product_id);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_product_tag_links_tag_id     ON product_tag_links(tag_id);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_product_tag_links_tenant_id  ON product_tag_links(tenant_id);")
+
+        # 9. Seed: características padrão por tenant
+        # Conjunto mínimo (Cor, Tamanho, Voltagem) editável/deletável pela UI.
+        # ON CONFLICT garante idempotência ao re-rodar a migration.
+        cur.execute("SELECT id FROM tenants WHERE active = TRUE;")
+        tenant_ids = [r["id"] for r in cur.fetchall()]
+        for tid in tenant_ids:
+            for name, ctype, values in DEFAULT_CHARACTERISTICS:
+                cur.execute(
+                    """
+                    INSERT INTO product_characteristics (name, type, tenant_id)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (tenant_id, name) DO NOTHING
+                    RETURNING id;
+                    """,
+                    (name, ctype, tid),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    cur.execute(
+                        "SELECT id FROM product_characteristics WHERE tenant_id = %s AND name = %s;",
+                        (tid, name),
+                    )
+                    row = cur.fetchone()
+                cid = row["id"]
+                for v, hex_color, num, unit in values:
+                    cur.execute(
+                        """
+                        INSERT INTO product_characteristic_values
+                               (value, hex_color, numeric_value, unit, characteristic_id, tenant_id)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (characteristic_id, value) DO NOTHING;
+                        """,
+                        (v, hex_color, num, unit, cid, tid),
+                    )
+        logger.info(f"  Características padrão seedadas para {len(tenant_ids)} tenant(s).")
 
     logger.info("0006_cadastros_products applied.")
 

@@ -57,6 +57,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db_session
 from app.core.event_bus import EventBus
+from app.core.html_sanitizer import sanitize_html, sanitize_plain
 from app.dependencies.auth import require_authentication
 from app.modules.cadastros import events as evt
 from app.modules.cadastros.schemas import (
@@ -263,7 +264,7 @@ async def list_families(
         SELECT * FROM product_families
         WHERE  tenant_id = :tid
           AND  (:active_only = FALSE OR active = TRUE)
-        ORDER  BY sort_order, name
+        ORDER  BY name
     """
     return await _fetch_all(db, sql, {"tid": user["tenant_id"], "active_only": only_active})
 
@@ -277,8 +278,8 @@ async def create_family(
     try:
         row = await _fetch_one(db,
             """
-            INSERT INTO product_families (name, sort_order, tenant_id)
-            VALUES (:name, :sort_order, :tid)
+            INSERT INTO product_families (name, tenant_id)
+            VALUES (:name, :tid)
             RETURNING *
             """,
             {**body.model_dump(), "tid": user["tenant_id"]},
@@ -328,7 +329,7 @@ async def list_characteristics(
         SELECT * FROM product_characteristics
         WHERE  tenant_id = :tid
           AND  (:active_only = FALSE OR active = TRUE)
-        ORDER  BY sort_order, name
+        ORDER  BY name
     """
     return await _fetch_all(db, sql, {"tid": user["tenant_id"], "active_only": only_active})
 
@@ -343,8 +344,8 @@ async def create_characteristic(
     try:
         row = await _fetch_one(db,
             """
-            INSERT INTO product_characteristics (name, type, sort_order, tenant_id)
-            VALUES (:name, :type, :sort_order, :tid)
+            INSERT INTO product_characteristics (name, type, tenant_id)
+            VALUES (:name, :type, :tid)
             RETURNING *
             """,
             {**body.model_dump(), "tid": user["tenant_id"]},
@@ -401,7 +402,7 @@ async def list_characteristic_values(
         SELECT * FROM product_characteristic_values
         WHERE  characteristic_id = :cid
           AND  (:active_only = FALSE OR active = TRUE)
-        ORDER  BY sort_order, value
+        ORDER  BY value
     """
     return await _fetch_all(db, sql, {"cid": characteristic_id, "active_only": only_active})
 
@@ -424,11 +425,11 @@ async def create_characteristic_value(
         row = await _fetch_one(db,
             """
             INSERT INTO product_characteristic_values
-                   (value, hex_color, numeric_value, unit, sort_order, characteristic_id)
-            VALUES (:value, :hex_color, :numeric_value, :unit, :sort_order, :cid)
+                   (value, hex_color, numeric_value, unit, characteristic_id, tenant_id)
+            VALUES (:value, :hex_color, :numeric_value, :unit, :cid, :tid)
             RETURNING *
             """,
-            {**body.model_dump(), "cid": characteristic_id},
+            {**body.model_dump(), "cid": characteristic_id, "tid": user["tenant_id"]},
         )
         await db.commit()
         return row
@@ -547,6 +548,20 @@ async def list_products(
     })
 
 
+def _sanitize_product_payload(payload: dict) -> dict:
+    """Sanitiza campos de conteúdo rico (description) e texto puro (meta_*,
+    short_description) do payload de produto. Mutates+returns o mesmo dict."""
+    if "description" in payload:
+        payload["description"] = sanitize_html(payload["description"])
+    if "short_description" in payload:
+        payload["short_description"] = sanitize_plain(payload["short_description"], max_len=500)
+    if "meta_title" in payload:
+        payload["meta_title"] = sanitize_plain(payload["meta_title"], max_len=200)
+    if "meta_description" in payload:
+        payload["meta_description"] = sanitize_plain(payload["meta_description"], max_len=500)
+    return payload
+
+
 @router.post("/products", response_model=ProductOut, status_code=status.HTTP_201_CREATED)
 async def create_product(
     body: ProductCreate,
@@ -556,7 +571,7 @@ async def create_product(
     await _assert_family_owned(db, body.family_id, user["tenant_id"])
     cols = ", ".join(_PRODUCT_INSERT_COLS) + ", tenant_id"
     placeholders = ", ".join(f":{c}" for c in _PRODUCT_INSERT_COLS) + ", :tid"
-    params = {**body.model_dump(), "tid": user["tenant_id"]}
+    params = {**_sanitize_product_payload(body.model_dump()), "tid": user["tenant_id"]}
     try:
         row = await _fetch_one(db,
             f"INSERT INTO products ({cols}) VALUES ({placeholders}) RETURNING *",
@@ -599,7 +614,7 @@ async def bulk_create_products(
             payload = item.model_dump(exclude={"characteristics"})
             if body.family_id and not payload.get("family_id"):
                 payload["family_id"] = body.family_id
-            params = {**payload, "tid": user["tenant_id"]}
+            params = {**_sanitize_product_payload(payload), "tid": user["tenant_id"]}
             row = await _fetch_one(db, sql, params)
             created.append(row)
             if item.characteristics:
@@ -618,6 +633,32 @@ async def bulk_create_products(
         "product_ids": [r["id"] for r in created],
     })
     return created
+
+
+@router.get("/products/covers")
+async def list_product_covers(
+    db: AsyncSession = Depends(get_db_session),
+    user: dict = Depends(require_authentication),
+) -> list[dict]:
+    """Capa (1ª imagem) de todos os produtos do tenant em uma única query.
+    Prioriza imagem direta (product_id) sobre imagem de família (family_id) e,
+    em empate, a de menor sort_order. Produtos sem imagem não aparecem."""
+    sql = """
+        SELECT DISTINCT ON (p.id)
+               p.id  AS product_id,
+               pi.url
+        FROM   products p
+        JOIN   product_images pi
+               ON pi.tenant_id = p.tenant_id
+              AND pi.active    = TRUE
+              AND (pi.product_id = p.id
+                   OR (pi.family_id IS NOT NULL AND pi.family_id = p.family_id))
+        WHERE  p.tenant_id = :tid
+        ORDER  BY p.id,
+                  CASE WHEN pi.product_id IS NOT NULL THEN 0 ELSE 1 END,
+                  pi.sort_order, pi.id
+    """
+    return await _fetch_all(db, sql, {"tid": user["tenant_id"]})
 
 
 @router.get("/products/{product_id}", response_model=ProductOut)
@@ -649,6 +690,7 @@ async def update_product(
     if "family_id" in payload:
         await _assert_family_owned(db, payload["family_id"], user["tenant_id"])
 
+    payload = _sanitize_product_payload(payload)
     set_clause, params = _build_set_clause(payload)
     params.update({"id": product_id, "tid": user["tenant_id"]})
 
@@ -789,11 +831,11 @@ async def add_kit_item(
     try:
         row = await _fetch_one(db,
             """
-            INSERT INTO product_kit_items (quantity, kit_id, component_id)
-            VALUES (:qty, :kid, :cid)
+            INSERT INTO product_kit_items (quantity, kit_id, component_id, tenant_id)
+            VALUES (:qty, :kid, :cid, :tid)
             RETURNING *
             """,
-            {"qty": body.quantity, "kid": kit_id, "cid": body.component_id},
+            {"qty": body.quantity, "kid": kit_id, "cid": body.component_id, "tid": user["tenant_id"]},
         )
         await db.commit()
         return row
@@ -982,11 +1024,11 @@ async def link_tag(
     try:
         row = await _fetch_one(db,
             """
-            INSERT INTO product_tag_links (product_id, tag_id)
-            VALUES (:pid, :tag)
+            INSERT INTO product_tag_links (product_id, tag_id, tenant_id)
+            VALUES (:pid, :tag, :tid)
             RETURNING *
             """,
-            {"pid": product_id, "tag": body.tag_id},
+            {"pid": product_id, "tag": body.tag_id, "tid": user["tenant_id"]},
         )
         await db.commit()
         return row
@@ -1159,11 +1201,11 @@ async def create_price_table_item(
     try:
         row = await _fetch_one(db,
             """
-            INSERT INTO price_table_items (price, price_table_id, product_id)
-            VALUES (:price, :pt, :pid)
+            INSERT INTO price_table_items (price, price_table_id, product_id, tenant_id)
+            VALUES (:price, :pt, :pid, :tid)
             RETURNING *
             """,
-            {"price": body.price, "pt": table_id, "pid": body.product_id},
+            {"price": body.price, "pt": table_id, "pid": body.product_id, "tid": user["tenant_id"]},
         )
         await db.commit()
         return row
