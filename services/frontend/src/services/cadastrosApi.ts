@@ -25,12 +25,38 @@ export interface TagWrite { name: string; slug: string }
 
 // ── Famílias ─────────────────────────────────────────────────────────────────
 
+// Valores guardados em FamilyRead.defaults — chaves são colunas de products
+// gerenciadas em nível de família. Tipo amplo porque cada chave tem semântica
+// distinta (string/number/decimal/category_id/html); a UI valida por chave.
+export type FamilyDefaultValue = string | number | null
+export type FamilyDefaults = Record<string, FamilyDefaultValue>
+
 export interface FamilyRead {
   id: number; name: string
+  defaults: FamilyDefaults
+  characteristic_ids: number[]
   tenant_id: number; active: boolean
   created_at: string; last_updated_at: string
 }
-export interface FamilyWrite { name: string }
+export interface FamilyWrite {
+  name: string
+  defaults?: FamilyDefaults
+  characteristic_ids?: number[]
+}
+
+// Tipo lógico das colunas do allow-list (corresponde a FAMILY_MANAGED_FIELD_OPTIONS no backend).
+export type FamilyManagedFieldType = 'string' | 'text' | 'html' | 'decimal' | 'category'
+export interface FamilyManagedFieldOption {
+  key:   string
+  label: string
+  type:  FamilyManagedFieldType
+}
+
+export interface FamilyApplyResult {
+  family_id:      number
+  products_count: number
+  fields_applied: string[]
+}
 
 // ── Características & Valores ────────────────────────────────────────────────
 
@@ -191,7 +217,17 @@ function makeCrud<R, W>(path: string) {
 
 export const categoriesApi      = makeCrud<CategoryRead,       CategoryWrite      >('/categories')
 export const tagsApi            = makeCrud<TagRead,            TagWrite           >('/tags')
-export const familiesApi        = makeCrud<FamilyRead,         FamilyWrite        >('/product-families')
+// Famílias estendem o CRUD genérico com endpoints próprios:
+// - applyDefaults: propaga os defaults a todos os produtos da família.
+// - getManagedFieldOptions: lista o allow-list de campos configuráveis.
+const familiesCrud = makeCrud<FamilyRead, FamilyWrite>('/product-families')
+export const familiesApi = {
+  ...familiesCrud,
+  applyDefaults: (familyId: number) =>
+    apiClient.post<FamilyApplyResult>(`${BASE}/product-families/${familyId}/apply-defaults`).then(r => r.data),
+  getManagedFieldOptions: () =>
+    apiClient.get<FamilyManagedFieldOption[]>(`${BASE}/product-families/managed-fields-options`).then(r => r.data),
+}
 export const characteristicsApi = makeCrud<CharacteristicRead, CharacteristicWrite>('/product-characteristics')
 export const productsApi        = makeCrud<ProductRead,        ProductWrite       >('/products')
 export const priceTablesApi     = makeCrud<PriceTableRead,     PriceTableWrite    >('/price-tables')
@@ -267,10 +303,14 @@ export const productImagesApi = {
   },
   listByProduct: (productId: number, params?: Record<string, unknown>) =>
     apiClient.get<ProductImageRead[]>(`${BASE}/products/${productId}/images`, { params }).then(r => r.data),
+  listByFamily: (familyId: number, params?: Record<string, unknown>) =>
+    apiClient.get<ProductImageRead[]>(`${BASE}/product-families/${familyId}/images`, { params }).then(r => r.data),
   listCovers: () =>
     apiClient.get<{ product_id: number; url: string }[]>(`${BASE}/products/covers`).then(r => r.data),
   attach: (productId: number, body: ProductImageWrite) =>
     apiClient.post<ProductImageRead>(`${BASE}/products/${productId}/images`, body).then(r => r.data),
+  attachToFamily: (familyId: number, body: Omit<ProductImageWrite, 'family_id' | 'product_id'>) =>
+    apiClient.post<ProductImageRead>(`${BASE}/product-families/${familyId}/images`, body).then(r => r.data),
   patch: (imageId: number, body: { alt_text?: string | null; sort_order?: number; active?: boolean }) =>
     apiClient.patch<ProductImageRead>(`${BASE}/images/${imageId}`, body).then(r => r.data),
   softDelete: (imageId: number) =>

@@ -131,7 +131,8 @@ export function DecimalInput({ value, onChange, unit, decimals = 3, maxIntDigits
 }
 
 // Achata categorias em lista com profundidade para exibir hierarquia indentada.
-function flattenCategories(cats: CategoryRead[]): Array<{ cat: CategoryRead; depth: number }> {
+// Exportada para reuso em outras telas (ex.: wizard de combinações).
+export function flattenCategories(cats: CategoryRead[]): Array<{ cat: CategoryRead; depth: number }> {
   const active = cats.filter(c => c.active)
   const byParent = new Map<number | null, CategoryRead[]>()
   for (const c of active) {
@@ -464,6 +465,7 @@ export function ProductFormModal({
     if (!pendingFamilyName) return families
     return [...families, {
       id: PENDING_FAMILY_ID, name: pendingFamilyName,
+      defaults: {}, characteristic_ids: [],
       tenant_id: 0, active: true, created_at: '', last_updated_at: '',
     }]
   }, [families, pendingFamilyName])
@@ -548,20 +550,24 @@ export function ProductFormModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-3xl p-6 max-h-[92vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg flex items-center justify-center"
-              style={{ backgroundColor: initial ? 'var(--color-edit)' : 'var(--color-create)', color: initial ? 'var(--on-color-edit)' : 'var(--on-color-create)' }}>
-              {initial ? <Pencil size={18} /> : <Plus size={18} />}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden">
+        {/* Header fixo: título + indicador de obrigatórios não rolam junto com
+            o conteúdo, evitando que seções deslizem por cima deles. */}
+        <div className="flex-shrink-0 px-6 pt-6 pb-3 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg flex items-center justify-center"
+                style={{ backgroundColor: initial ? 'var(--color-edit)' : 'var(--color-create)', color: initial ? 'var(--on-color-edit)' : 'var(--on-color-create)' }}>
+                {initial ? <Pencil size={18} /> : <Plus size={18} />}
+              </div>
+              <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100">{initial ? 'Editar produto' : 'Novo produto'}</h2>
             </div>
-            <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100">{initial ? 'Editar produto' : 'Novo produto'}</h2>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><X size={20} /></button>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><X size={20} /></button>
+          <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-2"><span className="text-red-500">*</span> campos obrigatórios</p>
         </div>
-        <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-3"><span className="text-red-500">*</span> campos obrigatórios</p>
 
-        <div className="space-y-3">
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
           {/* Imagens primeiro: oferece feedback visual desde o começo, tanto
               em criar (modo rascunho) quanto em editar (modo persistido). */}
           <Section icon={ImageIcon} title="Imagens">
@@ -636,7 +642,7 @@ export function ProductFormModal({
                   options={familyOptions}
                   onCreate={async (name) => {
                     setPendingFamilyName(name)
-                    return { id: PENDING_FAMILY_ID, name, tenant_id: 0, active: true, created_at: '', last_updated_at: '' }
+                    return { id: PENDING_FAMILY_ID, name, defaults: {}, characteristic_ids: [], tenant_id: 0, active: true, created_at: '', last_updated_at: '' }
                   }}
                   placeholder="Buscar ou criar família…" />
               </Field>
@@ -666,10 +672,18 @@ export function ProductFormModal({
                 <input value={draft.short_description ?? ''} onChange={e => set('short_description', e.target.value)}
                   className={fieldCls} placeholder="Resumo de 1–2 linhas que aparece em listagens." />
               </Field>
-              <Field label="Descrição completa" full>
-                <RichTextEditor value={draft.description ?? ''} onChange={v => set('description', v)}
-                  placeholder="Descreva o produto: características, diferenciais, modo de uso…" />
-              </Field>
+              {/* Não usa <Field> aqui porque ele renderiza um <label> e o
+                  RichTextEditor contém botões: o navegador associa o <label>
+                  ao primeiro descendente "labelable" (o botão Negrito), o que
+                  faz qualquer clique/hover dentro do componente disparar
+                  hover/click no botão B. */}
+              <div className="block col-span-2">
+                <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Descrição completa</span>
+                <div className="mt-1">
+                  <RichTextEditor value={draft.description ?? ''} onChange={v => set('description', v)}
+                    placeholder="Descreva o produto: características, diferenciais, modo de uso…" />
+                </div>
+              </div>
               <SeoField label="Meta title" value={draft.meta_title ?? ''} onChange={v => set('meta_title', v)}
                 min={50} max={60}
                 placeholder="Ex: Café especial 500g — torrado e moído | Loja do João" />
@@ -680,7 +694,8 @@ export function ProductFormModal({
           </Section>
         </div>
 
-        <div className="flex justify-end gap-2 mt-6">
+        {/* Footer fixo: ações primárias sempre visíveis, fora do scroll. */}
+        <div className="flex-shrink-0 flex justify-end gap-2 px-6 py-4 border-t border-gray-200 dark:border-gray-700">
           <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg text-white font-medium hover:opacity-90 transition-opacity"
             style={{ backgroundColor: 'var(--color-cancel)' }}>Cancelar</button>
           <button onClick={handleSave} disabled={saving}

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { FloppyDisk, MagnifyingGlass, Pencil, Plus, Trash, X } from '@phosphor-icons/react'
+import { Link } from 'react-router-dom'
+import { ArrowRight, FloppyDisk, MagnifyingGlass, Pencil, Plus, Trash, X } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { familiesApi, productsApi, type FamilyRead, type FamilyWrite, type ProductRead } from '../services/cadastrosApi'
 import { useModalShortcuts } from '../hooks/useModalShortcuts'
@@ -128,12 +129,14 @@ export default function FamiliesPage() {
               <th className="text-left py-2 pl-3 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300">Nome</th>
               <th className="text-right py-2 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300 w-28">Produtos</th>
               <th className="text-center py-2 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300 w-24">Status</th>
-              <th className="w-20" />
+              <th className="w-32" />
             </tr></thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
               {filtered.map((f) => (
                 <tr key={f.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                  <td className="py-3 pl-3 font-semibold text-gray-800 dark:text-gray-100">{f.name}</td>
+                  <td className="py-3 pl-3 font-semibold text-gray-800 dark:text-gray-100">
+                    <Link to={`/cadastros/familias/${f.id}`} className="hover:text-[var(--color-1)] hover:underline">{f.name}</Link>
+                  </td>
                   <td className="py-3 text-right text-gray-500 dark:text-gray-400">{countByFamily.get(f.id) ?? 0}</td>
                   <td className="py-3 text-center">
                     <span className="text-[11px] font-semibold px-2 py-0.5 rounded" style={{ background: f.active ? 'var(--color-success)' : '#cbd5e1', color: f.active ? 'var(--on-color-success)' : '#475569' }}>
@@ -141,7 +144,8 @@ export default function FamiliesPage() {
                     </span>
                   </td>
                   <td className="py-3 pr-3 text-right">
-                    <button onClick={() => { setEditing(f); setOpen(true) }} className="p-2 rounded-lg text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors" title="Editar"><Pencil size={16} /></button>
+                    <Link to={`/cadastros/familias/${f.id}`} className="inline-flex p-2 rounded-lg text-gray-500 dark:text-gray-300 hover:text-[var(--color-1)] hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="Abrir detalhes"><ArrowRight size={16} /></Link>
+                    <button onClick={() => { setEditing(f); setOpen(true) }} className="p-2 rounded-lg text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors ml-1" title="Renomear"><Pencil size={16} /></button>
                     {f.active && <button onClick={() => handleSoftDelete(f)} className="p-2 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors ml-1" title="Desativar"><Trash size={16} /></button>}
                   </td>
                 </tr>

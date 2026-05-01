@@ -17,8 +17,11 @@ Estrutura
   /categories/{id}                  GET PATCH         detalhe, atualiza/soft-delete
   /tags                             GET POST          lista, cria
   /tags/{id}                        GET PATCH         detalhe, atualiza/soft-delete
-  /product-families                 GET POST          lista, cria (catálogo)
-  /product-families/{id}            PATCH             atualiza/soft-delete
+  /product-families                          GET POST   lista, cria (catálogo)
+  /product-families/{id}                     GET PATCH  detalhe, atualiza/soft-delete
+  /product-families/managed-fields-options   GET        allow-list de campos gerenciáveis
+  /product-families/{id}/apply-defaults      POST       propaga defaults a todos os produtos
+  /product-families/{id}/images              GET POST   galeria compartilhada da família
   /product-characteristics          GET POST          lista, cria (catálogo)
   /product-characteristics/{id}     PATCH             atualiza (type imutável)
   /product-characteristics/{id}/values  GET POST      lista/cria valor
@@ -61,12 +64,14 @@ from app.core.html_sanitizer import sanitize_html, sanitize_plain
 from app.dependencies.auth import require_authentication
 from app.modules.cadastros import events as evt
 from app.modules.cadastros.schemas import (
+    FAMILY_MANAGED_FIELD_KEYS, FAMILY_MANAGED_FIELD_OPTIONS,
     CampaignCreate, CampaignOut, CampaignUpdate,
     CategoryCreate, CategoryOut, CategoryUpdate,
     CharacteristicCreate, CharacteristicLinkCreate, CharacteristicLinkOut,
     CharacteristicOut, CharacteristicUpdate,
     CharacteristicValueCreate, CharacteristicValueOut, CharacteristicValueUpdate,
-    FamilyCreate, FamilyOut, FamilyUpdate,
+    FamilyApplyResult, FamilyCreate, FamilyManagedFieldOption,
+    FamilyOut, FamilyUpdate,
     KitItemCreate, KitItemOut, KitItemUpdate,
     PriceTableCreate, PriceTableItemCreate, PriceTableItemOut,
     PriceTableItemUpdate, PriceTableOut, PriceTableUpdate,
@@ -254,6 +259,45 @@ async def update_tag(
 
 # ── Families ──────────────────────────────────────────────────────────────────
 
+def _validate_family_defaults(defaults: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Aceita apenas chaves do allow-list (FAMILY_MANAGED_FIELD_KEYS).
+    Chaves desconhecidas → 400. None passa direto."""
+    if defaults is None:
+        return None
+    unknown = set(defaults.keys()) - FAMILY_MANAGED_FIELD_KEYS
+    if unknown:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            f"Campos inválidos para defaults: {sorted(unknown)}")
+    return defaults
+
+
+def _build_family_set_clause(payload: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """Variante de _build_set_clause que faz cast :defaults::jsonb (psycopg
+    serializa dict como string sem o tipo correto na cláusula UPDATE)."""
+    parts: list[str] = []
+    for k in payload.keys():
+        if k == "defaults":
+            parts.append("defaults = CAST(:defaults AS JSONB)")
+        else:
+            parts.append(f"{k} = :{k}")
+    parts.append("last_updated_at = NOW()")
+    # defaults precisa ir como JSON string para o cast funcionar.
+    if "defaults" in payload and payload["defaults"] is not None:
+        import json
+        payload = {**payload, "defaults": json.dumps(payload["defaults"])}
+    return ", ".join(parts), payload
+
+
+@router.get("/product-families/managed-fields-options",
+            response_model=list[FamilyManagedFieldOption])
+async def list_family_managed_field_options(
+    user: dict = Depends(require_authentication),  # noqa: ARG001 — auth obrigatória
+):
+    """Lista o allow-list de colunas de products gerenciáveis em nível de
+    família (chave, label, tipo lógico para a UI)."""
+    return FAMILY_MANAGED_FIELD_OPTIONS
+
+
 @router.get("/product-families", response_model=list[FamilyOut])
 async def list_families(
     only_active: bool = Query(default=True),
@@ -269,20 +313,42 @@ async def list_families(
     return await _fetch_all(db, sql, {"tid": user["tenant_id"], "active_only": only_active})
 
 
+@router.get("/product-families/{family_id}", response_model=FamilyOut)
+async def get_family(
+    family_id: int,
+    db: AsyncSession = Depends(get_db_session),
+    user: dict = Depends(require_authentication),
+):
+    row = await _fetch_one(db,
+        "SELECT * FROM product_families WHERE id = :id AND tenant_id = :tid",
+        {"id": family_id, "tid": user["tenant_id"]},
+    )
+    if not row:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Família não encontrada.")
+    return row
+
+
 @router.post("/product-families", response_model=FamilyOut, status_code=status.HTTP_201_CREATED)
 async def create_family(
     body: FamilyCreate,
     db: AsyncSession = Depends(get_db_session),
     user: dict = Depends(require_authentication),
 ):
+    _validate_family_defaults(body.defaults)
+    import json
     try:
         row = await _fetch_one(db,
             """
-            INSERT INTO product_families (name, tenant_id)
-            VALUES (:name, :tid)
+            INSERT INTO product_families (name, defaults, characteristic_ids, tenant_id)
+            VALUES (:name, CAST(:defaults AS JSONB), CAST(:cids AS INTEGER[]), :tid)
             RETURNING *
             """,
-            {**body.model_dump(), "tid": user["tenant_id"]},
+            {
+                "name": body.name,
+                "defaults": json.dumps(body.defaults or {}),
+                "cids": body.characteristic_ids or [],
+                "tid": user["tenant_id"],
+            },
         )
         await db.commit()
         return row
@@ -301,7 +367,9 @@ async def update_family(
     payload = body.model_dump(exclude_unset=True)
     if not payload:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Nenhum campo para atualizar.")
-    set_clause, params = _build_set_clause(payload)
+    if "defaults" in payload:
+        _validate_family_defaults(payload["defaults"])
+    set_clause, params = _build_family_set_clause(payload)
     params.update({"id": family_id, "tid": user["tenant_id"]})
     try:
         row = await _fetch_one(db,
@@ -315,6 +383,92 @@ async def update_family(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Família não encontrada.")
     await db.commit()
     return row
+
+
+@router.post("/product-families/{family_id}/apply-defaults",
+             response_model=FamilyApplyResult)
+async def apply_family_defaults(
+    family_id: int,
+    db: AsyncSession = Depends(get_db_session),
+    user: dict = Depends(require_authentication),
+):
+    """Propaga os `defaults` da família para todos os produtos vinculados.
+    Substitui (overwrites) os valores atuais — comportamento "campos genéricos
+    são gerenciados na família, não no produto"."""
+    fam = await _fetch_one(db,
+        "SELECT defaults FROM product_families WHERE id = :id AND tenant_id = :tid",
+        {"id": family_id, "tid": user["tenant_id"]},
+    )
+    if not fam:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Família não encontrada.")
+    defaults: dict[str, Any] = fam.get("defaults") or {}
+    # Filtra novamente contra o allow-list (defesa em profundidade).
+    valid = {k: v for k, v in defaults.items() if k in FAMILY_MANAGED_FIELD_KEYS}
+    if not valid:
+        return {"family_id": family_id, "products_count": 0, "fields_applied": []}
+    # Sanitiza description/short_description/meta_* da mesma forma que produto.
+    valid = _sanitize_product_payload(dict(valid))
+    set_clause = ", ".join(f"{k} = :{k}" for k in valid.keys()) + ", last_updated_at = NOW()"
+    result = await db.execute(
+        text(f"UPDATE products SET {set_clause} WHERE family_id = :fid AND tenant_id = :tid"),
+        {**valid, "fid": family_id, "tid": user["tenant_id"]},
+    )
+    await db.commit()
+    return {
+        "family_id":      family_id,
+        "products_count": result.rowcount or 0,
+        "fields_applied": list(valid.keys()),
+    }
+
+
+@router.get("/product-families/{family_id}/images", response_model=list[ProductImageOut])
+async def list_family_images(
+    family_id: int,
+    only_active: bool = Query(default=True),
+    db: AsyncSession = Depends(get_db_session),
+    user: dict = Depends(require_authentication),
+):
+    """Lista somente as imagens vinculadas direto à família (galeria compartilhada)."""
+    await _assert_family_owned(db, family_id, user["tenant_id"])
+    return await _fetch_all(db,
+        """
+        SELECT * FROM product_images
+        WHERE  tenant_id = :tid
+          AND  family_id = :fid
+          AND  (:active_only = FALSE OR active = TRUE)
+        ORDER  BY sort_order, id
+        """,
+        {"tid": user["tenant_id"], "fid": family_id, "active_only": only_active},
+    )
+
+
+@router.post("/product-families/{family_id}/images",
+             response_model=ProductImageOut, status_code=status.HTTP_201_CREATED)
+async def attach_family_image(
+    family_id: int,
+    body: ProductImageCreate,
+    db: AsyncSession = Depends(get_db_session),
+    user: dict = Depends(require_authentication),
+):
+    """Anexa uma imagem (já enviada via /products/upload-image) à família, sem
+    exigir um produto âncora — necessário para gerenciar a galeria pelo
+    detalhe da família, inclusive quando ainda não há produtos vinculados."""
+    await _assert_family_owned(db, family_id, user["tenant_id"])
+    try:
+        row = await _fetch_one(db,
+            """
+            INSERT INTO product_images (url, alt_text, family_id, sort_order, product_id, tenant_id)
+            VALUES (:url, :alt, :fid, :sort, NULL, :tid)
+            RETURNING *
+            """,
+            {"url": body.url, "alt": body.alt_text, "fid": family_id,
+             "sort": body.sort_order, "tid": user["tenant_id"]},
+        )
+        await db.commit()
+        return row
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Conflito ao salvar imagem: {exc.orig}")
 
 
 # ── Characteristics & Values ──────────────────────────────────────────────────
@@ -921,13 +1075,16 @@ async def list_product_images(
     )
     if not owner:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Produto não encontrado.")
+    # Mesma prioridade da query de capas (/products/covers): imagem direta do
+    # produto vem antes das herdadas da família, depois sort_order e id.
     sql = """
         SELECT * FROM product_images
         WHERE  tenant_id = :tid
           AND  (:active_only = FALSE OR active = TRUE)
           AND  (product_id = :pid
                 OR (CAST(:fid AS INTEGER) IS NOT NULL AND family_id = CAST(:fid AS INTEGER)))
-        ORDER  BY sort_order, id
+        ORDER  BY CASE WHEN product_id IS NOT NULL THEN 0 ELSE 1 END,
+                  sort_order, id
     """
     return await _fetch_all(db, sql, {
         "tid": user["tenant_id"], "pid": product_id,

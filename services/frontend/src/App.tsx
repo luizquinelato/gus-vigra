@@ -15,6 +15,7 @@ import OutboxPage from './pages/OutboxPage'
 import CategoriesPage from './pages/CategoriesPage'
 import TagsPage from './pages/TagsPage'
 import FamiliesPage from './pages/FamiliesPage'
+import FamilyDetailPage from './pages/FamilyDetailPage'
 import CharacteristicsPage from './pages/CharacteristicsPage'
 import ProductsPage from './pages/ProductsPage'
 import PriceTablesPage from './pages/PriceTablesPage'
@@ -162,6 +163,7 @@ function AuthenticatedApp() {
           <Route path="/cadastros/categorias" element={<CategoriesPage />} />
           <Route path="/cadastros/tags" element={<TagsPage />} />
           <Route path="/cadastros/familias" element={<FamiliesPage />} />
+          <Route path="/cadastros/familias/:familyId" element={<FamilyDetailPage />} />
           <Route path="/cadastros/caracteristicas" element={<CharacteristicsPage />} />
           <Route path="/cadastros/produtos" element={<ProductsPage />} />
           <Route path="/cadastros/tabelas-preco" element={<PriceTablesPage />} />

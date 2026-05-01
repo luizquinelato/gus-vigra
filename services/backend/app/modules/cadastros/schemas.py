@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -74,23 +74,62 @@ class TagOut(BaseModel):
 
 # ── Famílias ──────────────────────────────────────────────────────────────────
 
+# Allow-list de colunas de products que podem ser gerenciadas em nível de família.
+# Inclui label exibido e tipo lógico para a UI (input apropriado). Ordem aqui
+# define a ordem do "Configurar campos genéricos".
+FAMILY_MANAGED_FIELD_OPTIONS: list[dict[str, str]] = [
+    {"key": "brand",             "label": "Marca",                  "type": "string"},
+    {"key": "category_id",       "label": "Categoria",              "type": "category"},
+    {"key": "unit",              "label": "Unidade",                "type": "string"},
+    {"key": "description",       "label": "Descrição completa",     "type": "html"},
+    {"key": "short_description", "label": "Descrição curta",        "type": "text"},
+    {"key": "ncm",               "label": "NCM",                    "type": "string"},
+    {"key": "weight_kg",         "label": "Peso (kg)",              "type": "decimal"},
+    {"key": "height_cm",         "label": "Altura (cm)",            "type": "decimal"},
+    {"key": "width_cm",          "label": "Largura (cm)",           "type": "decimal"},
+    {"key": "depth_cm",          "label": "Profundidade (cm)",      "type": "decimal"},
+    {"key": "meta_title",        "label": "Meta title",             "type": "text"},
+    {"key": "meta_description",  "label": "Meta description",       "type": "text"},
+    {"key": "type",              "label": "Tipo (simple/kit)",      "type": "string"},
+]
+FAMILY_MANAGED_FIELD_KEYS = {opt["key"] for opt in FAMILY_MANAGED_FIELD_OPTIONS}
+
+
 class FamilyCreate(BaseModel):
-    name:       str = Field(..., max_length=80)
+    name:               str = Field(..., max_length=80)
+    defaults:           Optional[dict[str, Any]] = None
+    characteristic_ids: Optional[list[int]] = None
 
 
 class FamilyUpdate(BaseModel):
-    name:       Optional[str] = Field(None, max_length=80)
-    active:     Optional[bool] = None
+    name:               Optional[str] = Field(None, max_length=80)
+    defaults:           Optional[dict[str, Any]] = None
+    characteristic_ids: Optional[list[int]] = None
+    active:             Optional[bool] = None
 
 
 class FamilyOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    id:               int
-    name:             str
-    tenant_id:        int
-    active:           bool
-    created_at:       datetime
-    last_updated_at:  datetime
+    id:                 int
+    name:               str
+    defaults:           dict[str, Any] = Field(default_factory=dict)
+    characteristic_ids: list[int] = Field(default_factory=list)
+    tenant_id:          int
+    active:             bool
+    created_at:         datetime
+    last_updated_at:    datetime
+
+
+class FamilyManagedFieldOption(BaseModel):
+    key:   str
+    label: str
+    type:  str
+
+
+class FamilyApplyResult(BaseModel):
+    family_id:      int
+    products_count: int
+    fields_applied: list[str]
 
 
 # ── Características & Valores ────────────────────────────────────────────────

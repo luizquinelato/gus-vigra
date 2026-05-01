@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CaretDown, CaretUp, CaretUpDown, ImageSquare, MagicWand, MagnifyingGlass, Pencil, Plus, Trash, X } from '@phosphor-icons/react'
+import { CaretDown, CaretLeft, CaretRight, CaretUp, CaretUpDown, ImageSquare, MagicWand, MagnifyingGlass, Pencil, Plus, Trash, X } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import {
   categoriesApi, characteristicsApi, characteristicValuesApi, familiesApi, productsApi,
@@ -40,12 +40,36 @@ export default function ProductsPage() {
   // Cache global de valores por characteristic_id, populado lazy quando o modal
   // de detalhes precisa resolver os nomes.
   const [valuesByCharId, setValuesByCharId] = useState<Record<number, CharacteristicValueRead[]>>({})
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  // Carrossel de imagens do produto. Aberto via clique na thumb da linha;
+  // carrega todas as imagens (próprias + herdadas da família) sob demanda.
+  const [preview, setPreview] = useState<{ name: string; images: string[]; index: number } | null>(null)
   const [charDetailsFor, setCharDetailsFor] = useState<ProductRead | null>(null)
   // ESC fecha o lightbox de imagem e o painel de detalhes de características.
   // Sem onSubmit: ambos são apenas leitura, Enter não tem ação relevante.
-  useModalShortcuts({ onClose: () => setPreviewUrl(null),    enabled: previewUrl != null })
+  useModalShortcuts({ onClose: () => setPreview(null),       enabled: preview != null })
   useModalShortcuts({ onClose: () => setCharDetailsFor(null), enabled: charDetailsFor != null })
+
+  // Navegação por teclado (← / →) só ativa enquanto o carrossel está aberto.
+  useEffect(() => {
+    if (!preview || preview.images.length <= 1) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'ArrowLeft')  { e.preventDefault(); setPreview(p => p ? { ...p, index: (p.index - 1 + p.images.length) % p.images.length } : p) }
+      if (e.key === 'ArrowRight') { e.preventDefault(); setPreview(p => p ? { ...p, index: (p.index + 1) % p.images.length } : p) }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [preview])
+
+  async function openPreview(p: ProductRead) {
+    try {
+      const imgs = await productImagesApi.listByProduct(p.id, { only_active: true })
+      const urls = imgs.map(i => i.url)
+      if (urls.length === 0) return
+      setPreview({ name: p.name, images: urls, index: 0 })
+    } catch {
+      toast.error('Erro ao carregar imagens.')
+    }
+  }
   // Filtros estruturados (selects). 0 = "Todos".
   const [filterBrand,    setFilterBrand]    = useState<string>('')
   const [filterCategory, setFilterCategory] = useState<number>(0)
@@ -292,9 +316,9 @@ export default function ProductsPage() {
                         <td className="px-3 py-3.5">
                           <div className="flex items-center gap-3 min-w-0">
                             <button type="button"
-                              onClick={() => cover && setPreviewUrl(cover)}
+                              onClick={() => cover && openPreview(p)}
                               disabled={!cover}
-                              title={cover ? 'Ver imagem' : 'Sem imagem'}
+                              title={cover ? 'Ver imagens' : 'Sem imagem'}
                               className="shrink-0 w-9 h-9 rounded border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 overflow-hidden flex items-center justify-center hover:border-[var(--color-1)] disabled:cursor-default disabled:hover:border-gray-200 dark:disabled:hover:border-gray-600">
                               {cover
                                 ? <img src={cover} alt={p.name} className="w-full h-full object-cover" />
@@ -376,19 +400,59 @@ export default function ProductsPage() {
           onSaved={() => { setOpenWizard(false); reload() }} />
       )}
 
-      {previewUrl && (
-        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-6"
-          onClick={() => setPreviewUrl(null)}>
-          <button type="button" onClick={() => setPreviewUrl(null)}
-            className="absolute top-4 right-4 text-white/80 hover:text-white p-2 rounded-full bg-black/30 hover:bg-black/50"
-            title="Fechar">
-            <X size={20} />
-          </button>
-          <img src={previewUrl} alt="Imagem do produto"
-            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl"
-            onClick={e => e.stopPropagation()} />
-        </div>
-      )}
+      {preview && (() => {
+        const total = preview.images.length
+        const go = (delta: number) => setPreview(p => p ? { ...p, index: (p.index + delta + p.images.length) % p.images.length } : p)
+        return (
+          <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-6"
+            onClick={() => setPreview(null)}>
+            <button type="button" onClick={() => setPreview(null)}
+              className="absolute top-4 right-4 text-white/80 hover:text-white p-2 rounded-full bg-black/30 hover:bg-black/50"
+              title="Fechar">
+              <X size={20} />
+            </button>
+            <div className="flex flex-col items-center gap-3" onClick={e => e.stopPropagation()}>
+              {/* Wrapper relativo se ajusta ao tamanho real da imagem renderizada
+                  (sem object-contain), de modo que os controles fiquem colados às
+                  bordas da imagem em vez das bordas da viewport. */}
+              <div className="relative">
+                <img src={preview.images[preview.index]} alt={preview.name}
+                  className="block max-w-[85vw] max-h-[80vh] rounded-lg shadow-2xl" />
+                {total > 1 && (
+                  <>
+                    <button type="button" onClick={e => { e.stopPropagation(); go(-1) }}
+                      className="absolute left-2 top-1/2 -translate-y-1/2 text-white/80 hover:text-white p-2 rounded-full bg-black/40 hover:bg-black/60"
+                      title="Anterior (←)">
+                      <CaretLeft size={20} weight="bold" />
+                    </button>
+                    <button type="button" onClick={e => { e.stopPropagation(); go(1) }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-white/80 hover:text-white p-2 rounded-full bg-black/40 hover:bg-black/60"
+                      title="Próxima (→)">
+                      <CaretRight size={20} weight="bold" />
+                    </button>
+                  </>
+                )}
+              </div>
+              <div className="flex flex-col items-center gap-2">
+                <span className="text-xs text-white/80 font-medium">{preview.name}</span>
+                {total > 1 && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-white/60 font-mono">{preview.index + 1} / {total}</span>
+                    <div className="flex items-center gap-1">
+                      {preview.images.map((_, i) => (
+                        <button key={i} type="button"
+                          onClick={() => setPreview(p => p ? { ...p, index: i } : p)}
+                          className={`w-1.5 h-1.5 rounded-full transition-colors ${i === preview.index ? 'bg-white' : 'bg-white/30 hover:bg-white/60'}`}
+                          title={`Imagem ${i + 1}`} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {charDetailsFor && (() => {
         const links = charLinks[charDetailsFor.id] ?? []

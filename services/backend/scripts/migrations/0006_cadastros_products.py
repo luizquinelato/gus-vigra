@@ -14,6 +14,11 @@ product_families) liga "irmãos" da mesma família para UI/relatórios/promoçõ
 
 - product_families: catálogo de famílias por tenant (entidade própria,
   substitui o antigo VARCHAR `family` em products/images).
+  Inclui `defaults` (JSONB) com valores padrão herdáveis dos produtos da
+  família — as chaves são colunas de products gerenciadas no nível de família
+  (ex.: brand, category_id, unit, description). Inclui `characteristic_ids`
+  (INTEGER[]) listando quais características esta família varia (ex.:
+  ["Cor","Tamanho"] = produtos da família terão valores próprios para cada).
 - product_characteristics: dimensões reutilizáveis (Cor, Tamanho, Voltagem)
   com `type` ∈ ('text','color','number') que destrava UI/storage específico.
 - product_characteristic_values: valores de uma characteristic. Para
@@ -77,17 +82,25 @@ def apply(conn) -> None:
 
         # 1. product_families
         # Catálogo de famílias por tenant (substitui o antigo VARCHAR `family`).
+        # defaults: JSONB com chaves = colunas de products gerenciadas em nível
+        #   de família (brand, category_id, unit, description, ncm, ...). O
+        #   valor é propagado a todos os produtos via POST /apply-defaults.
+        # characteristic_ids: lista de characteristic IDs que esta família
+        #   varia (ex.: [Cor, Tamanho]). Cada produto da família escolhe seu
+        #   próprio valor para cada characteristic listada.
         cur.execute("""
             CREATE TABLE IF NOT EXISTS product_families (
                 -- 1. ID
-                id              SERIAL       PRIMARY KEY,
+                id                 SERIAL       PRIMARY KEY,
                 -- 2. Campos próprios
-                name            VARCHAR(80)  NOT NULL,
+                name               VARCHAR(80)  NOT NULL,
+                defaults           JSONB        NOT NULL DEFAULT '{}'::jsonb,
+                characteristic_ids INTEGER[]    NOT NULL DEFAULT '{}'::int[],
                 -- 3. Campos herdados
-                tenant_id       INTEGER      NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-                active          BOOLEAN      DEFAULT TRUE,
-                created_at      TIMESTAMPTZ  DEFAULT NOW(),
-                last_updated_at TIMESTAMPTZ  DEFAULT NOW(),
+                tenant_id          INTEGER      NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                active             BOOLEAN      DEFAULT TRUE,
+                created_at         TIMESTAMPTZ  DEFAULT NOW(),
+                last_updated_at    TIMESTAMPTZ  DEFAULT NOW(),
                 UNIQUE(tenant_id, name)
             );
         """)
