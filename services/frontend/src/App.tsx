@@ -4,6 +4,7 @@ import { Toaster } from 'sonner'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { useTheme } from './contexts/useTheme'
+import { ConfirmProvider } from './contexts/ConfirmContext'
 import LoginPage from './pages/LoginPage'
 import AppShell from './components/AppShell'
 import HomePage from './pages/HomePage'
@@ -12,10 +13,10 @@ import ProfilePage from './pages/ProfilePage'
 import RolesPage from './pages/RolesPage'
 import PagesPage from './pages/PagesPage'
 import OutboxPage from './pages/OutboxPage'
+import CodeTemplatesPage from './pages/CodeTemplatesPage'
 import CategoriesPage from './pages/CategoriesPage'
 import TagsPage from './pages/TagsPage'
 import FamiliesPage from './pages/FamiliesPage'
-import FamilyDetailPage from './pages/FamilyDetailPage'
 import CharacteristicsPage from './pages/CharacteristicsPage'
 import ProductsPage from './pages/ProductsPage'
 import PriceTablesPage from './pages/PriceTablesPage'
@@ -159,11 +160,11 @@ function AuthenticatedApp() {
           <Route path="/admin/roles"    element={<AdminRoute><RolesPage /></AdminRoute>} />
           <Route path="/admin/pages"   element={<AdminRoute><PagesPage /></AdminRoute>} />
           <Route path="/admin/outbox"  element={<AdminRoute><OutboxPage /></AdminRoute>} />
+          <Route path="/admin/code-templates" element={<AdminRoute><CodeTemplatesPage /></AdminRoute>} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/cadastros/categorias" element={<CategoriesPage />} />
           <Route path="/cadastros/tags" element={<TagsPage />} />
           <Route path="/cadastros/familias" element={<FamiliesPage />} />
-          <Route path="/cadastros/familias/:familyId" element={<FamilyDetailPage />} />
           <Route path="/cadastros/caracteristicas" element={<CharacteristicsPage />} />
           <Route path="/cadastros/produtos" element={<ProductsPage />} />
           <Route path="/cadastros/tabelas-preco" element={<PriceTablesPage />} />
@@ -184,17 +185,20 @@ export default function App() {
       <ForceLogoutHandler />
       {/* Toast global — posicionado fora do ThemeProvider para ser sempre visível */}
       <Toaster position="top-right" closeButton />
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route
-          path="/*"
-          element={
-            <ProtectedRoute>
-              <AuthenticatedApp />
-            </ProtectedRoute>
-          }
-        />
-      </Routes>
+      {/* useConfirm() disponível em qualquer página/componente abaixo. */}
+      <ConfirmProvider>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route
+            path="/*"
+            element={
+              <ProtectedRoute>
+                <AuthenticatedApp />
+              </ProtectedRoute>
+            }
+          />
+        </Routes>
+      </ConfirmProvider>
     </AuthProvider>
   )
 }

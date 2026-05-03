@@ -45,7 +45,7 @@ export interface FamilyWrite {
 }
 
 // Tipo lógico das colunas do allow-list (corresponde a FAMILY_MANAGED_FIELD_OPTIONS no backend).
-export type FamilyManagedFieldType = 'string' | 'text' | 'html' | 'decimal' | 'category'
+export type FamilyManagedFieldType = 'string' | 'text' | 'html' | 'decimal' | 'currency' | 'category'
 export interface FamilyManagedFieldOption {
   key:   string
   label: string
@@ -249,6 +249,32 @@ export const characteristicValuesApi = {
     apiClient.patch<CharacteristicValueRead>(`${BASE}/characteristic-values/${valueId}`, body).then(r => r.data),
   softDelete: (valueId: number) =>
     apiClient.patch<CharacteristicValueRead>(`${BASE}/characteristic-values/${valueId}`, { active: false }).then(r => r.data),
+}
+
+// ── Templates de código de produto (system_settings) ────────────────────────
+
+export interface CodeTemplatesRead {
+  template: string         // DSL — ex.: "AAA-9999"
+  separator: string        // 1 char — usado pelo wizard de família. "" = não configurado
+  allow_legacy: boolean
+}
+
+// Leitura via /modules/cadastros/code-templates (autenticado).
+// Escrita continua via /settings/{key} (admin) — um PUT por chave.
+export const codeTemplatesApi = {
+  get: () => apiClient.get<CodeTemplatesRead>(`${BASE}/code-templates`).then(r => r.data),
+  update: async (payload: Partial<CodeTemplatesRead>) => {
+    const calls: Promise<unknown>[] = []
+    if (payload.template !== undefined)
+      calls.push(apiClient.put('/settings/product_code_template', { value: payload.template }))
+    if (payload.separator !== undefined)
+      calls.push(apiClient.put('/settings/product_code_family_separator', { value: payload.separator }))
+    if (payload.allow_legacy !== undefined)
+      calls.push(apiClient.put('/settings/product_code_allow_legacy', {
+        value: payload.allow_legacy ? 'true' : 'false',
+      }))
+    await Promise.all(calls)
+  },
 }
 
 // ── Bulk de produtos (wizard de combinatória) ────────────────────────────────

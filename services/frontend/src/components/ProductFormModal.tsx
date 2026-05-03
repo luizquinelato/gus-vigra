@@ -5,8 +5,10 @@ import {
 } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import {
+  codeTemplatesApi,
   familiesApi, kitItemsApi, productCharacteristicsApi, productImagesApi, productsApi,
   type CategoryRead, type CharacteristicLinkWrite, type CharacteristicRead,
+  type CodeTemplatesRead,
   type FamilyRead, type KitItemRead, type ProductImageRead,
   type ProductRead, type ProductType, type ProductWrite,
 } from '../services/cadastrosApi'
@@ -15,10 +17,12 @@ import { CharacteristicEditor } from './CharacteristicEditor'
 import { FamilyCombobox } from './FamilyCombobox'
 import { ImageCropModal } from './ImageCropModal'
 import { RichTextEditor } from './RichTextEditor'
+import { TemplatedCodeInput, validateTemplate, validateTemplateWithSeparator } from './TemplatedCodeInput'
 import { useModalShortcuts } from '../hooks/useModalShortcuts'
 import { sanitizeHtml } from '../utils/htmlSanitizer'
 
-const fieldCls = 'w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 outline-none transition-colors hover:border-[var(--color-1)] focus:border-[var(--color-1)]'
+// Disabled state cobre campos travados pela família (managed defaults).
+const fieldCls = 'w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 outline-none transition-colors hover:border-[var(--color-1)] focus:border-[var(--color-1)] disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-gray-50 dark:disabled:bg-gray-800 disabled:hover:border-gray-200 dark:disabled:hover:border-gray-600'
 // Wrapper sem padding (input interno traz o seu) — evita altura dobrada.
 const fieldClsNoPadding = 'w-full text-sm rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 outline-none transition-colors hover:border-[var(--color-1)] focus-within:border-[var(--color-1)]'
 
@@ -30,8 +34,8 @@ const PENDING_FAMILY_ID = -1
 // `maxIntDigits` define o limite de dígitos da parte inteira (8 = R$ 99.999.999,99).
 // Quando o usuário tenta exceder o cap, o valor é fixado no máximo (9999...,99)
 // em vez de truncar dígitos arbitrariamente.
-export function CurrencyInput({ value, onChange, maxIntDigits = 8 }: {
-  value: string; onChange: (v: string) => void; maxIntDigits?: number
+export function CurrencyInput({ value, onChange, maxIntDigits = 8, disabled = false }: {
+  value: string; onChange: (v: string) => void; maxIntDigits?: number; disabled?: boolean
 }) {
   const cents = Math.max(0, Math.round((Number(value) || 0) * 100))
   const reais = Math.floor(cents / 100)
@@ -39,7 +43,8 @@ export function CurrencyInput({ value, onChange, maxIntDigits = 8 }: {
   const display = `R$ ${reais.toLocaleString('pt-BR')},${cs}`
   const maxTotalDigits = maxIntDigits + 2
   return (
-    <input value={display} inputMode="numeric" className={fieldCls}
+    <input value={display} inputMode="numeric" disabled={disabled}
+      className={`${fieldCls} disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-gray-50 dark:disabled:bg-gray-800`}
       onChange={e => {
         const raw = e.target.value.replace(/[^0-9]/g, '')
         const digits = raw.length > maxTotalDigits ? '9'.repeat(maxTotalDigits) : raw
@@ -53,9 +58,9 @@ export function CurrencyInput({ value, onChange, maxIntDigits = 8 }: {
 // fill da direita-pra-esquerda, sempre formatado, sufixo de unidade opcional.
 // Internamente devolve string decimal com PONTO compatível com NUMERIC do backend.
 // Quando o usuário tenta exceder o cap, fixa no máximo (9999...,99) em vez de truncar.
-export function MeasureInput({ value, onChange, unit, decimals = 2, maxIntDigits = 8 }: {
+export function MeasureInput({ value, onChange, unit, decimals = 2, maxIntDigits = 8, disabled = false }: {
   value: string | null; onChange: (v: string | null) => void
-  unit?: string; decimals?: number; maxIntDigits?: number
+  unit?: string; decimals?: number; maxIntDigits?: number; disabled?: boolean
 }) {
   const factor = Math.pow(10, decimals)
   const small = Math.max(0, Math.round((Number(value) || 0) * factor))
@@ -64,9 +69,9 @@ export function MeasureInput({ value, onChange, unit, decimals = 2, maxIntDigits
   const display = `${intPart.toLocaleString('pt-BR')},${decPart}`
   const maxTotal = maxIntDigits + decimals
   return (
-    <div className={`${fieldClsNoPadding} flex items-center gap-2`}>
-      <input value={display} inputMode="numeric"
-        className="w-full bg-transparent outline-none px-3 py-2 text-sm"
+    <div className={`${fieldClsNoPadding} flex items-center gap-2 ${disabled ? 'opacity-60 cursor-not-allowed bg-gray-50 dark:bg-gray-800' : ''}`}>
+      <input value={display} inputMode="numeric" disabled={disabled}
+        className="w-full bg-transparent outline-none px-3 py-2 text-sm disabled:cursor-not-allowed"
         onChange={e => {
           const raw = e.target.value.replace(/[^0-9]/g, '')
           const digits = raw.length > maxTotal ? '9'.repeat(maxTotal) : raw
@@ -80,13 +85,13 @@ export function MeasureInput({ value, onChange, unit, decimals = 2, maxIntDigits
 }
 
 // NCM no formato fiscal XXXX.XX.XX (8 dígitos).
-function NcmInput({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
+export function NcmInput({ value, onChange, disabled = false }: { value: string | null; onChange: (v: string | null) => void; disabled?: boolean }) {
   const digits = (value ?? '').replace(/[^0-9]/g, '').slice(0, 8)
   const display = digits.length > 6 ? `${digits.slice(0, 4)}.${digits.slice(4, 6)}.${digits.slice(6)}`
                 : digits.length > 4 ? `${digits.slice(0, 4)}.${digits.slice(4)}`
                 : digits
   return (
-    <input value={display} inputMode="numeric" placeholder="0000.00.00" className={fieldCls}
+    <input value={display} inputMode="numeric" placeholder="0000.00.00" className={fieldCls} disabled={disabled}
       onChange={e => {
         const d = e.target.value.replace(/[^0-9]/g, '').slice(0, 8)
         onChange(d.length === 0 ? null : d.length > 6 ? `${d.slice(0, 4)}.${d.slice(4, 6)}.${d.slice(6)}`
@@ -163,11 +168,18 @@ interface Props {
   onSaved: () => void
 }
 
-function Field({ label, children, full = false, required = false }: { label: string; children: React.ReactNode; full?: boolean; required?: boolean }) {
+// `managed`: marca o campo como controlado pela família — adiciona um hint
+// discreto ao rótulo. O `disabled` no input deve ser passado pelo chamador.
+function Field({ label, children, full = false, required = false, managed = false }: { label: string; children: React.ReactNode; full?: boolean; required?: boolean; managed?: boolean }) {
   return (
     <label className={`block ${full ? 'col-span-2' : ''}`}>
-      <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">
-        {label}{required && <span className="text-red-500 ml-0.5">*</span>}
+      <span className="flex items-center justify-between gap-2 text-xs font-semibold text-gray-600 dark:text-gray-300">
+        <span>{label}{required && <span className="text-red-500 ml-0.5">*</span>}</span>
+        {managed && (
+          <span className="text-[10px] font-normal italic text-gray-500 dark:text-gray-400" title="Definido pela família — edite no detalhe da família">
+            (controlado pela família)
+          </span>
+        )}
       </span>
       <div className="mt-1">{children}</div>
     </label>
@@ -176,9 +188,9 @@ function Field({ label, children, full = false, required = false }: { label: str
 
 // Campo de SEO (meta_title / meta_description) com contador colorido por faixa
 // ideal. Verde dentro do intervalo recomendado, âmbar abaixo, vermelho acima.
-function SeoField({ label, value, onChange, min, max, multiline, placeholder }: {
+function SeoField({ label, value, onChange, min, max, multiline, placeholder, disabled = false }: {
   label: string; value: string; onChange: (v: string) => void
-  min: number; max: number; multiline?: boolean; placeholder?: string
+  min: number; max: number; multiline?: boolean; placeholder?: string; disabled?: boolean
 }) {
   const len = value.length
   const status = len === 0 ? 'empty' : len < min ? 'short' : len <= max ? 'ok' : 'long'
@@ -188,14 +200,17 @@ function SeoField({ label, value, onChange, min, max, multiline, placeholder }: 
               : 'text-gray-400 dark:text-gray-500'
   return (
     <label className="block col-span-2">
-      <span className="flex items-center justify-between text-xs font-semibold text-gray-600 dark:text-gray-300">
-        <span>{label}</span>
+      <span className="flex items-center justify-between gap-2 text-xs font-semibold text-gray-600 dark:text-gray-300">
+        <span>
+          {label}
+          {disabled && <span className="ml-2 text-[10px] font-normal italic text-gray-500 dark:text-gray-400" title="Definido pela família — edite no detalhe da família">(controlado pela família)</span>}
+        </span>
         <span className={color}>{len}/{max} <span className="font-normal opacity-70">(ideal {min}–{max})</span></span>
       </span>
       <div className="mt-1">
         {multiline
-          ? <textarea value={value} onChange={e => onChange(e.target.value)} rows={2} className={fieldCls} placeholder={placeholder} />
-          : <input value={value} onChange={e => onChange(e.target.value)} className={fieldCls} placeholder={placeholder} />}
+          ? <textarea value={value} onChange={e => onChange(e.target.value)} rows={2} className={fieldCls} placeholder={placeholder} disabled={disabled} />
+          : <input value={value} onChange={e => onChange(e.target.value)} className={fieldCls} placeholder={placeholder} disabled={disabled} />}
       </div>
     </label>
   )
@@ -446,6 +461,8 @@ export function ProductFormModal({
   // Flag global "compartilhar com a família": no Salvar, todas as imagens
   // (rascunho ou já vinculadas direto ao produto) passam a ser de família.
   const [shareWithFamily, setShareWithFamily] = useState(false)
+  // Templates de código (system_settings). Carregados uma vez por mount.
+  const [codeTpl, setCodeTpl] = useState<CodeTemplatesRead | null>(null)
 
   useEffect(() => {
     if (!initial) { setLinks([]); return }
@@ -453,6 +470,21 @@ export function ProductFormModal({
       .then(rows => setLinks(rows.map(r => ({ characteristic_id: r.characteristic_id, value_id: r.value_id }))))
       .catch(() => toast.error('Erro ao carregar características.'))
   }, [initial])
+
+  useEffect(() => {
+    codeTemplatesApi.get().then(setCodeTpl).catch(() => { /* opcional */ })
+  }, [])
+
+  // Quando a família selecionada muda, espelha os defaults dela nos campos
+  // managed do produto. Garante que (a) inputs travados mostram o valor real
+  // que será persistido e (b) o save grava o valor da família, não o antigo.
+  useEffect(() => {
+    if (draft.family_id == null || draft.family_id === PENDING_FAMILY_ID) return
+    const fam = families.find(f => f.id === draft.family_id)
+    if (!fam || Object.keys(fam.defaults ?? {}).length === 0) return
+    setDraft(prev => ({ ...prev, ...(fam.defaults as Partial<ProductWrite>) }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.family_id, families])
 
   function set<K extends keyof ProductWrite>(k: K, v: ProductWrite[K]) { setDraft(p => ({ ...p, [k]: v })) }
   function onChangeName(v: string) {
@@ -472,6 +504,30 @@ export function ProductFormModal({
 
   // Categorias indentadas por hierarquia para o select.
   const categoryRows = useMemo(() => flattenCategories(categories), [categories])
+
+  // Chaves controladas pela família selecionada (nomes de colunas em products).
+  // Quando a família é "pendente" (ainda não persistida) ou não há família,
+  // o set é vazio — nada fica travado.
+  const managedKeys = useMemo<Set<string>>(() => {
+    if (draft.family_id == null || draft.family_id === PENDING_FAMILY_ID) return new Set()
+    const fam = families.find(f => f.id === draft.family_id)
+    return new Set(Object.keys(fam?.defaults ?? {}))
+  }, [draft.family_id, families])
+  const isManaged = (k: string) => managedKeys.has(k)
+
+  // Template + separador família vêm de system_settings. Sem família, valida
+  // direto pelo template; com família, exige <template><sep><resto>.
+  const tplStr = codeTpl?.template ?? ''
+  const sepStr = codeTpl?.separator ?? ''
+  const hasFamily = draft.family_id != null && draft.family_id !== PENDING_FAMILY_ID
+  const codeIsValid = !tplStr || !draft.code
+    ? true
+    : (hasFamily
+        ? validateTemplateWithSeparator(tplStr, sepStr, draft.code)
+        : validateTemplate(tplStr, draft.code))
+  // Banner de legado: produto existente cujo código atual não casa com o
+  // template vigente. Mostra apenas no modo edição (initial != null).
+  const isLegacyCode = !!initial && !!tplStr && !!draft.code && !codeIsValid
 
   useModalShortcuts({ onClose, onSubmit: () => { void handleSave() } })
 
@@ -584,7 +640,16 @@ export function ProductFormModal({
           <Section icon={Package} title="Básico">
             <div className="grid grid-cols-2 gap-3">
               <Field label="Código" required>
-                <input value={draft.code} onChange={e => set('code', e.target.value)} className={fieldCls} placeholder="ex: CAFE-500-M" />
+                <TemplatedCodeInput value={draft.code} onChange={v => set('code', v)}
+                  template={tplStr}
+                  freeAfter={hasFamily && sepStr ? sepStr : undefined}
+                  ariaInvalid={isLegacyCode} />
+                {isLegacyCode && (
+                  <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
+                    Código fora do formato atual (<span className="font-mono">{tplStr}{hasFamily && sepStr ? `${sepStr}…` : ''}</span>) —
+                    {codeTpl?.allow_legacy ? ' será aceito como legado.' : ' precisa ser regularizado para salvar.'}
+                  </p>
+                )}
               </Field>
               <Field label="Nome" required>
                 <input value={draft.name} onChange={e => onChangeName(e.target.value)} className={fieldCls} />
@@ -592,23 +657,23 @@ export function ProductFormModal({
               {/* Cap em R$ 99.999.999,99 (8 dig int): suficiente para MEI/MPE
                   e bem abaixo dos limites do banco (price NUMERIC(15,2),
                   cost NUMERIC(15,4)). */}
-              <Field label="Preço de venda">
-                <CurrencyInput value={draft.price ?? '0'} onChange={v => set('price', v)} maxIntDigits={8} />
+              <Field label="Preço de venda" managed={isManaged('price')}>
+                <CurrencyInput value={draft.price ?? '0'} onChange={v => set('price', v)} maxIntDigits={8} disabled={isManaged('price')} />
               </Field>
-              <Field label="Custo">
-                <CurrencyInput value={draft.cost ?? '0'} onChange={v => set('cost', v)} maxIntDigits={8} />
+              <Field label="Custo" managed={isManaged('cost')}>
+                <CurrencyInput value={draft.cost ?? '0'} onChange={v => set('cost', v)} maxIntDigits={8} disabled={isManaged('cost')} />
               </Field>
-              <Field label="Unidade">
-                <input value={draft.unit ?? 'un'} onChange={e => set('unit', e.target.value)} className={fieldCls} placeholder="un, kg, L…" />
+              <Field label="Unidade" managed={isManaged('unit')}>
+                <input value={draft.unit ?? 'un'} onChange={e => set('unit', e.target.value)} className={fieldCls} placeholder="un, kg, L…" disabled={isManaged('unit')} />
               </Field>
-              <Field label="Tipo">
-                <select value={draft.type ?? 'simple'} onChange={e => set('type', e.target.value as ProductType)} className={fieldCls}>
+              <Field label="Tipo" managed={isManaged('type')}>
+                <select value={draft.type ?? 'simple'} onChange={e => set('type', e.target.value as ProductType)} className={fieldCls} disabled={isManaged('type')}>
                   <option value="simple">Simples</option>
                   <option value="kit">Kit</option>
                 </select>
               </Field>
-              <Field label="Categoria">
-                <select value={draft.category_id ?? ''} onChange={e => set('category_id', e.target.value === '' ? null : Number(e.target.value))} className={fieldCls}>
+              <Field label="Categoria" managed={isManaged('category_id')}>
+                <select value={draft.category_id ?? ''} onChange={e => set('category_id', e.target.value === '' ? null : Number(e.target.value))} className={fieldCls} disabled={isManaged('category_id')}>
                   <option value="">— Sem categoria —</option>
                   {categoryRows.map(({ cat, depth }) => (
                     <option key={cat.id} value={cat.id}>
@@ -617,8 +682,8 @@ export function ProductFormModal({
                   ))}
                 </select>
               </Field>
-              <Field label="Marca">
-                <input value={draft.brand ?? ''} onChange={e => set('brand', e.target.value)} className={fieldCls} />
+              <Field label="Marca" managed={isManaged('brand')}>
+                <input value={draft.brand ?? ''} onChange={e => set('brand', e.target.value)} className={fieldCls} disabled={isManaged('brand')} />
               </Field>
               <Field label="Código de barras (EAN)" full>
                 <input value={draft.barcode ?? ''} onChange={e => set('barcode', e.target.value)} className={fieldCls} placeholder="7891234567890" />
@@ -660,17 +725,17 @@ export function ProductFormModal({
               <Field label="Slug" full required>
                 <input value={draft.slug} onChange={e => onChangeSlug(e.target.value)} className={fieldCls} />
               </Field>
-              <Field label="NCM"><NcmInput value={draft.ncm ?? null} onChange={v => set('ncm', v)} /></Field>
+              <Field label="NCM" managed={isManaged('ncm')}><NcmInput value={draft.ncm ?? null} onChange={v => set('ncm', v)} disabled={isManaged('ncm')} /></Field>
               {/* Limites alinhados com o banco: weight_kg NUMERIC(10,3) → 7 int digits;
                   height/width/depth_cm NUMERIC(10,2) → 8 int digits. MeasureInput
                   usa fill da direita-pra-esquerda (mesma UX de preço/custo). */}
-              <Field label="Peso"><MeasureInput value={draft.weight_kg ?? null} onChange={v => set('weight_kg', v)} unit="kg" decimals={3} maxIntDigits={7} /></Field>
-              <Field label="Altura"><MeasureInput value={draft.height_cm ?? null} onChange={v => set('height_cm', v)} unit="cm" decimals={2} maxIntDigits={8} /></Field>
-              <Field label="Largura"><MeasureInput value={draft.width_cm ?? null} onChange={v => set('width_cm', v)} unit="cm" decimals={2} maxIntDigits={8} /></Field>
-              <Field label="Profundidade"><MeasureInput value={draft.depth_cm ?? null} onChange={v => set('depth_cm', v)} unit="cm" decimals={2} maxIntDigits={8} /></Field>
-              <Field label="Descrição curta" full>
+              <Field label="Peso" managed={isManaged('weight_kg')}><MeasureInput value={draft.weight_kg ?? null} onChange={v => set('weight_kg', v)} unit="kg" decimals={3} maxIntDigits={7} disabled={isManaged('weight_kg')} /></Field>
+              <Field label="Altura" managed={isManaged('height_cm')}><MeasureInput value={draft.height_cm ?? null} onChange={v => set('height_cm', v)} unit="cm" decimals={2} maxIntDigits={8} disabled={isManaged('height_cm')} /></Field>
+              <Field label="Largura" managed={isManaged('width_cm')}><MeasureInput value={draft.width_cm ?? null} onChange={v => set('width_cm', v)} unit="cm" decimals={2} maxIntDigits={8} disabled={isManaged('width_cm')} /></Field>
+              <Field label="Profundidade" managed={isManaged('depth_cm')}><MeasureInput value={draft.depth_cm ?? null} onChange={v => set('depth_cm', v)} unit="cm" decimals={2} maxIntDigits={8} disabled={isManaged('depth_cm')} /></Field>
+              <Field label="Descrição curta" full managed={isManaged('short_description')}>
                 <input value={draft.short_description ?? ''} onChange={e => set('short_description', e.target.value)}
-                  className={fieldCls} placeholder="Resumo de 1–2 linhas que aparece em listagens." />
+                  className={fieldCls} placeholder="Resumo de 1–2 linhas que aparece em listagens." disabled={isManaged('short_description')} />
               </Field>
               {/* Não usa <Field> aqui porque ele renderiza um <label> e o
                   RichTextEditor contém botões: o navegador associa o <label>
@@ -678,17 +743,26 @@ export function ProductFormModal({
                   faz qualquer clique/hover dentro do componente disparar
                   hover/click no botão B. */}
               <div className="block col-span-2">
-                <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Descrição completa</span>
+                <span className="flex items-center justify-between gap-2 text-xs font-semibold text-gray-600 dark:text-gray-300">
+                  <span>Descrição completa</span>
+                  {isManaged('description') && (
+                    <span className="text-[10px] font-normal italic text-gray-500 dark:text-gray-400" title="Definido pela família — edite no detalhe da família">
+                      (controlado pela família)
+                    </span>
+                  )}
+                </span>
                 <div className="mt-1">
-                  <RichTextEditor value={draft.description ?? ''} onChange={v => set('description', v)}
-                    placeholder="Descreva o produto: características, diferenciais, modo de uso…" />
+                  <div className={isManaged('description') ? 'opacity-60 pointer-events-none select-none' : ''}>
+                    <RichTextEditor value={draft.description ?? ''} onChange={v => set('description', v)}
+                      placeholder="Descreva o produto: características, diferenciais, modo de uso…" />
+                  </div>
                 </div>
               </div>
               <SeoField label="Meta title" value={draft.meta_title ?? ''} onChange={v => set('meta_title', v)}
-                min={50} max={60}
+                min={50} max={60} disabled={isManaged('meta_title')}
                 placeholder="Ex: Café especial 500g — torrado e moído | Loja do João" />
               <SeoField label="Meta description" value={draft.meta_description ?? ''} onChange={v => set('meta_description', v)}
-                min={150} max={160} multiline
+                min={150} max={160} multiline disabled={isManaged('meta_description')}
                 placeholder="Ex: Café especial 100% arábica, torrado e moído na hora. Notas de chocolate e caramelo. Frete grátis acima de R$ 80." />
             </div>
           </Section>

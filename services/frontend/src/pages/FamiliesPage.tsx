@@ -1,82 +1,40 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { ArrowRight, FloppyDisk, MagnifyingGlass, Pencil, Plus, Trash, X } from '@phosphor-icons/react'
+import { CaretDown, CaretUp, CaretUpDown, MagnifyingGlass, Package, Pencil, Plus, Trash } from '@phosphor-icons/react'
 import { toast } from 'sonner'
-import { familiesApi, productsApi, type FamilyRead, type FamilyWrite, type ProductRead } from '../services/cadastrosApi'
-import { useModalShortcuts } from '../hooks/useModalShortcuts'
+import { familiesApi, productsApi, productImagesApi, type FamilyRead, type ProductRead } from '../services/cadastrosApi'
+import FamilyFormModal from '../components/FamilyFormModal'
+import FamilyProductsModal from '../components/FamilyProductsModal'
 
-const fieldCls = 'w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 outline-none focus:border-[var(--color-1)]'
-
-function FamilyModal({ initial, onClose, onSaved }: { initial: FamilyRead | null; onClose: () => void; onSaved: () => void }) {
-  const [name, setName] = useState(initial?.name ?? '')
-  const [saving, setSaving] = useState(false)
-
-  useModalShortcuts({ onClose, onSubmit: () => { void handleSave() } })
-
-  async function handleSave() {
-    if (!name.trim()) { toast.error('Nome é obrigatório.'); return }
-    setSaving(true)
-    try {
-      const body: FamilyWrite = { name: name.trim() }
-      if (initial) await familiesApi.patch(initial.id, body)
-      else         await familiesApi.create(body)
-      toast.success(initial ? 'Família atualizada.' : 'Família criada.')
-      onSaved()
-    } catch (e: unknown) {
-      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      toast.error(msg ?? 'Erro ao salvar família.')
-    } finally { setSaving(false) }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg flex items-center justify-center"
-              style={{ backgroundColor: initial ? 'var(--color-edit)' : 'var(--color-create)', color: initial ? 'var(--on-color-edit)' : 'var(--on-color-create)' }}>
-              {initial ? <Pencil size={18} /> : <Plus size={18} />}
-            </div>
-            <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100">{initial ? 'Editar família' : 'Nova família'}</h2>
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><X size={20} /></button>
-        </div>
-        <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-3"><span className="text-red-500">*</span> campos obrigatórios</p>
-        <div className="space-y-3">
-          <label className="block">
-            <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Nome<span className="text-red-500 ml-0.5">*</span></span>
-            <input value={name} onChange={e => setName(e.target.value)} className={`${fieldCls} mt-1`} autoFocus />
-          </label>
-        </div>
-        <div className="flex justify-end gap-2 mt-6">
-          <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg text-white font-medium hover:opacity-90 transition-opacity"
-            style={{ backgroundColor: 'var(--color-cancel)' }}>Cancelar</button>
-          <button onClick={handleSave} disabled={saving}
-            className="inline-flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold border-none"
-            style={{ background: 'var(--color-save)', color: 'var(--on-color-save)', opacity: saving ? 0.6 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}>
-            <FloppyDisk size={15} className={saving ? 'animate-spin' : undefined} /> Salvar
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
+type SortKey = 'name' | 'count' | 'status'
+type SortDir = 'asc' | 'desc'
 
 export default function FamiliesPage() {
   const [items, setItems] = useState<FamilyRead[]>([])
   const [products, setProducts] = useState<ProductRead[]>([])
+  const [covers, setCovers] = useState<Record<number, string | null>>({})
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('')
   const [editing, setEditing] = useState<FamilyRead | null>(null)
   const [open, setOpen] = useState(false)
+  // Modal somente-leitura com produtos vinculados.
+  const [productsOf, setProductsOf] = useState<FamilyRead | null>(null)
+  const [sortKey, setSortKey] = useState<SortKey>('name')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
 
   function reload() {
     setLoading(true)
     Promise.all([
       familiesApi.list({ only_active: false }),
       productsApi.list({ only_active: false, limit: 500 }),
+      productImagesApi.listCovers().catch(() => [] as { product_id: number; url: string }[]),
     ])
-      .then(([fs, ps]) => { setItems(fs); setProducts(ps) })
+      .then(([fs, ps, covs]) => {
+        setItems(fs); setProducts(ps)
+        const map: Record<number, string | null> = {}
+        ps.forEach(p => { map[p.id] = null })
+        covs.forEach(c => { map[c.product_id] = c.url })
+        setCovers(map)
+      })
       .catch(() => toast.error('Erro ao carregar famílias.'))
       .finally(() => setLoading(false))
   }
@@ -92,6 +50,26 @@ export default function FamiliesPage() {
     () => items.filter(t => t.name.toLowerCase().includes(filter.toLowerCase())),
     [items, filter],
   )
+
+  // Ordenação local. Strings via localeCompare pt-BR; números por subtração.
+  const sorted = useMemo(() => {
+    const arr = [...filtered]
+    arr.sort((a, b) => {
+      let cmp = 0
+      switch (sortKey) {
+        case 'name':   cmp = a.name.localeCompare(b.name, 'pt-BR'); break
+        case 'count':  cmp = (countByFamily.get(a.id) ?? 0) - (countByFamily.get(b.id) ?? 0); break
+        case 'status': cmp = Number(b.active) - Number(a.active); break
+      }
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+    return arr
+  }, [filtered, sortKey, sortDir, countByFamily])
+
+  function toggleSort(k: SortKey) {
+    if (sortKey === k) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortKey(k); setSortDir('asc') }
+  }
 
   async function handleSoftDelete(f: FamilyRead) {
     const count = countByFamily.get(f.id) ?? 0
@@ -122,40 +100,96 @@ export default function FamiliesPage() {
           className="w-full pl-8 pr-4 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 outline-none transition-colors hover:border-[var(--color-1)] focus:border-[var(--color-1)]" />
       </div>
 
-      <section className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-6 transition-colors hover:border-[var(--color-1)]">
-        {loading ? <p className="text-sm text-gray-400">Carregando...</p> : filtered.length === 0 ? <p className="text-sm text-gray-400">Nenhuma família.</p> : (
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700"><tr>
-              <th className="text-left py-2 pl-3 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300">Nome</th>
-              <th className="text-right py-2 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300 w-28">Produtos</th>
-              <th className="text-center py-2 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300 w-24">Status</th>
-              <th className="w-32" />
-            </tr></thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-              {filtered.map((f) => (
-                <tr key={f.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                  <td className="py-3 pl-3 font-semibold text-gray-800 dark:text-gray-100">
-                    <Link to={`/cadastros/familias/${f.id}`} className="hover:text-[var(--color-1)] hover:underline">{f.name}</Link>
-                  </td>
-                  <td className="py-3 text-right text-gray-500 dark:text-gray-400">{countByFamily.get(f.id) ?? 0}</td>
-                  <td className="py-3 text-center">
-                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded" style={{ background: f.active ? 'var(--color-success)' : '#cbd5e1', color: f.active ? 'var(--on-color-success)' : '#475569' }}>
-                      {f.active ? 'Ativa' : 'Inativa'}
-                    </span>
-                  </td>
-                  <td className="py-3 pr-3 text-right">
-                    <Link to={`/cadastros/familias/${f.id}`} className="inline-flex p-2 rounded-lg text-gray-500 dark:text-gray-300 hover:text-[var(--color-1)] hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="Abrir detalhes"><ArrowRight size={16} /></Link>
-                    <button onClick={() => { setEditing(f); setOpen(true) }} className="p-2 rounded-lg text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors ml-1" title="Renomear"><Pencil size={16} /></button>
-                    {f.active && <button onClick={() => handleSoftDelete(f)} className="p-2 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors ml-1" title="Desativar"><Trash size={16} /></button>}
-                  </td>
+      <section className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
+        {loading ? <p className="text-sm text-gray-400 p-6">Carregando...</p>
+         : sorted.length === 0 ? <p className="text-sm text-gray-400 p-6">Nenhuma família.</p>
+         : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
+                <tr>
+                  {/* Coluna espelho da borda esquerda das rows (4px). */}
+                  <th className="w-1 p-0" aria-hidden />
+                  <th className="px-3 py-3 w-12 text-xs font-medium uppercase tracking-wider text-gray-700 dark:text-gray-300 text-left">#</th>
+                  <SortHeader k="name"   label="Nome"              current={sortKey} dir={sortDir} onClick={toggleSort} />
+                  <SortHeader k="count"  label="Produtos" w="w-32" current={sortKey} dir={sortDir} onClick={toggleSort} />
+                  <SortHeader k="status" label="Status"   w="w-28" current={sortKey} dir={sortDir} onClick={toggleSort} />
+                  <th className="px-3 py-3 w-32 text-xs font-medium uppercase tracking-wider text-gray-700 dark:text-gray-300 text-left">Ações</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                {sorted.map((f, i) => {
+                  const count = countByFamily.get(f.id) ?? 0
+                  return (
+                    <tr key={f.id}
+                      className="group hover:bg-gray-50 dark:hover:bg-gray-700 transition-all shadow-[inset_4px_0_0_0_#d1d5db] dark:shadow-[inset_4px_0_0_0_#4b5563]"
+                      onMouseEnter={e => { e.currentTarget.style.boxShadow = 'inset 4px 0 0 0 var(--color-1)' }}
+                      onMouseLeave={e => { e.currentTarget.style.boxShadow = '' }}>
+                      <td className="w-1 p-0" aria-hidden />
+                      <td className="px-3 py-3.5 text-left">
+                        <span className="text-xs font-mono text-gray-500 dark:text-gray-400">{i + 1}</span>
+                      </td>
+                      <td className="px-3 py-3.5 font-semibold text-gray-800 dark:text-gray-100">{f.name}</td>
+                      <td className="px-3 py-3.5 text-left text-gray-600 dark:text-gray-300 whitespace-nowrap">{count}</td>
+                      <td className="px-3 py-3.5 text-left">
+                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded"
+                          style={{ background: f.active ? 'var(--color-success)' : '#cbd5e1', color: f.active ? 'var(--on-color-success)' : '#475569' }}>
+                          {f.active ? 'Ativa' : 'Inativa'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3.5 text-left whitespace-nowrap">
+                        <button onClick={() => setProductsOf(f)} disabled={count === 0}
+                          className="p-2 rounded-lg text-gray-600 dark:text-gray-300 hover:text-[var(--color-1)] hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-gray-600 dark:disabled:hover:text-gray-300"
+                          title={count === 0 ? 'Sem produtos vinculados' : 'Ver produtos'}><Package size={16} /></button>
+                        <button onClick={() => { setEditing(f); setOpen(true) }} className="p-2 rounded-lg text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors ml-1" title="Editar"><Pencil size={16} /></button>
+                        {f.active && <button onClick={() => handleSoftDelete(f)} className="p-2 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors ml-1" title="Desativar"><Trash size={16} /></button>}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
 
-      {open && <FamilyModal initial={editing} onClose={() => setOpen(false)} onSaved={() => { setOpen(false); reload() }} />}
+      {open && (
+        <FamilyFormModal initial={editing}
+          productsCount={editing ? (countByFamily.get(editing.id) ?? 0) : 0}
+          onClose={() => setOpen(false)} onSaved={() => { setOpen(false); reload() }} />
+      )}
+      {productsOf && (
+        <FamilyProductsModal family={productsOf} products={products} covers={covers}
+          onClose={() => setProductsOf(null)} />
+      )}
     </div>
+  )
+}
+
+interface SortHeaderProps {
+  k: SortKey
+  label: string
+  w?: string
+  align?: 'left' | 'right' | 'center'
+  current: SortKey
+  dir: SortDir
+  onClick: (k: SortKey) => void
+}
+
+function SortHeader({ k, label, w, align = 'left', current, dir, onClick }: SortHeaderProps) {
+  const isCurrent = current === k
+  const justify = align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : 'justify-start'
+  return (
+    <th className={`px-3 py-3 ${w ?? ''}`}>
+      <button type="button" onClick={() => onClick(k)}
+        className={`w-full inline-flex items-center gap-1 ${justify} text-xs font-medium uppercase tracking-wider transition-colors ${
+          isCurrent ? 'text-[var(--color-1)]' : 'text-gray-700 dark:text-gray-300 hover:text-[var(--color-1)]'
+        }`}>
+        {label}
+        {isCurrent
+          ? (dir === 'asc' ? <CaretUp size={11} weight="bold" /> : <CaretDown size={11} weight="bold" />)
+          : <CaretUpDown size={11} weight="bold" className="text-gray-400 dark:text-gray-500" />}
+      </button>
+    </th>
   )
 }

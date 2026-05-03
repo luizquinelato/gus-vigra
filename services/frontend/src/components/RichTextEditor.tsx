@@ -3,10 +3,6 @@ import { useEditor, useEditorState, EditorContent, type Editor } from '@tiptap/r
 import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import StarterKit from '@tiptap/starter-kit'
-import Bold from '@tiptap/extension-bold'
-import Italic from '@tiptap/extension-italic'
-import Strike from '@tiptap/extension-strike'
-import Underline from '@tiptap/extension-underline'
 import Link from '@tiptap/extension-link'
 import { TextStyle } from '@tiptap/extension-text-style'
 import { Color } from '@tiptap/extension-color'
@@ -16,18 +12,6 @@ import {
   TextHOne, TextHTwo, TextHThree, ArrowUUpLeft, ArrowUUpRight,
   Code, Eye, PencilSimple,
 } from '@phosphor-icons/react'
-
-// Marks de formatação não-inclusivas: por padrão o ProseMirror estende a marca
-// até o cursor quando ele cai na borda do trecho estilizado (inclusive=true),
-// o que faz o botão de Negrito/Itálico/etc. acender/apagar conforme o usuário
-// clica perto do texto formatado — comportamento percebido como instável.
-// Com inclusive=false a marca não "captura" o cursor na borda; só fica ativa
-// quando o cursor está realmente dentro do trecho ou quando o usuário arma a
-// marca explicitamente pelo botão da toolbar (storedMarks).
-const NonInclusiveBold = Bold.extend({ inclusive: false })
-const NonInclusiveItalic = Italic.extend({ inclusive: false })
-const NonInclusiveStrike = Strike.extend({ inclusive: false })
-const NonInclusiveUnderline = Underline.extend({ inclusive: false })
 import { sanitizeHtml } from '../utils/htmlSanitizer'
 
 // Preserva storedMarks (Bold/Italic/etc.) através de transações que mudam só
@@ -91,23 +75,14 @@ function useToolbarState(editor: Editor | null) {
           color: '#000000', canUndo: false, canRedo: false,
         }
       }
-      // Para marks de formatação (Bold/Italic/Underline/Strike) com seleção
-      // colapsada (cursor sem range), o botão reflete apenas as marks armadas
-      // pelo usuário via toolbar (storedMarks). Ignoramos as marks "herdadas"
-      // do cursor (`$from.marks()`) porque o ProseMirror as expõe mesmo em doc
-      // vazio em alguns cenários (StrictMode/parser), fazendo o botão acender
-      // sozinho ao clicar no campo. Com seleção em range, usa isActive normal.
-      const { selection, storedMarks } = ed.state
-      function markActive(name: string): boolean {
-        if (storedMarks?.some(m => m.type.name === name)) return true
-        if (selection.empty) return false
-        return ed.isActive(name)
-      }
+      // ed.isActive(mark) já considera storedMarks + marks no cursor — com as
+      // marcas inclusivas (default), permite digitação contínua: clicar B,
+      // digitar várias letras todas em negrito, até clicar B novamente.
       return {
-        isBold: markActive('bold'),
-        isItalic: markActive('italic'),
-        isUnderline: markActive('underline'),
-        isStrike: markActive('strike'),
+        isBold: ed.isActive('bold'),
+        isItalic: ed.isActive('italic'),
+        isUnderline: ed.isActive('underline'),
+        isStrike: ed.isActive('strike'),
         isH1: ed.isActive('heading', { level: 1 }),
         isH2: ed.isActive('heading', { level: 2 }),
         isH3: ed.isActive('heading', { level: 3 }),
@@ -188,15 +163,9 @@ export function RichTextEditor({ value, onChange, placeholder }: Props) {
 
   const editor = useEditor({
     extensions: [
-      // Desabilita as marks de formatação do StarterKit para registrar as
-      // versões não-inclusivas logo abaixo (evita captura na borda do trecho).
-      // Link também é desabilitado porque é registrado separadamente com
-      // configuração própria (openOnClick=false, autolink, target=_blank).
-      StarterKit.configure({ bold: false, italic: false, strike: false, underline: false, link: false }),
-      NonInclusiveBold,
-      NonInclusiveItalic,
-      NonInclusiveStrike,
-      NonInclusiveUnderline,
+      // Link é registrado separadamente com configuração própria
+      // (openOnClick=false, autolink, target=_blank).
+      StarterKit.configure({ link: false }),
       TextStyle,
       Color,
       Link.configure({ openOnClick: false, autolink: true, HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } }),

@@ -2,9 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, ArrowRight, FloppyDisk, Image as ImageIcon, MagicWand, Plus, Trash, X } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import {
-  characteristicValuesApi, characteristicsApi, productImagesApi, productsBulkApi,
+  characteristicValuesApi, characteristicsApi, codeTemplatesApi,
+  productImagesApi, productsBulkApi,
   type CategoryRead, type CharacteristicRead, type CharacteristicType,
-  type CharacteristicValueRead, type FamilyRead, type ProductBulkItem,
+  type CharacteristicValueRead, type CodeTemplatesRead,
+  type FamilyRead, type ProductBulkItem,
+  type ProductImageRead,
 } from '../services/cadastrosApi'
 import { slugify } from '../utils/slug'
 import { CharacteristicCombobox } from './CharacteristicCombobox'
@@ -12,9 +15,20 @@ import { CharacteristicValueCombobox } from './CharacteristicValueCombobox'
 import { FamilyCombobox } from './FamilyCombobox'
 import { ImageCropModal } from './ImageCropModal'
 import { CurrencyInput, flattenCategories } from './ProductFormModal'
+import { TemplatedCodeInput, formatTemplate } from './TemplatedCodeInput'
 import { useModalShortcuts } from '../hooks/useModalShortcuts'
 
-const fieldCls = 'w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 outline-none focus:border-[var(--color-1)]'
+const fieldCls = 'w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 outline-none focus:border-[var(--color-1)] disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-gray-50 dark:disabled:bg-gray-800'
+
+// Hint inline para campos travados pela família selecionada — mesmo padrão
+// visual do ProductFormModal.
+function ManagedHint() {
+  return (
+    <span className="ml-2 text-[10px] font-normal italic text-gray-500 dark:text-gray-400" title="Definido pela família — edite no detalhe da família">
+      (controlado pela família)
+    </span>
+  )
+}
 
 interface Props {
   categories: CategoryRead[]
@@ -27,7 +41,9 @@ interface Props {
 }
 
 // Eixo da combinatória: characteristic + N valores (ids do catálogo).
-interface Axis { characteristic_id: number | null; value_ids: number[] }
+// `lockedFromFamily` marca eixos derivados de family.characteristic_ids — a
+// characteristic não pode ser trocada nem o eixo removido (só os valores).
+interface Axis { characteristic_id: number | null; value_ids: number[]; lockedFromFamily?: boolean }
 
 interface Base {
   family_id: number | null; codePrefix: string; namePrefix: string
@@ -82,12 +98,33 @@ export function ProductBulkWizardModal({
   // serão anexadas com family_id após a criação em bulk — todos os produtos
   // gerados passam a vê-las automaticamente via vínculo da família.
   const [sharedImages, setSharedImages] = useState<string[]>([])
+  // Imagens já vinculadas à família selecionada — read-only, só pra contexto
+  // visual. São editadas no detalhe da família, não aqui.
+  const [existingFamilyImages, setExistingFamilyImages] = useState<ProductImageRead[]>([])
   // Crop pendente. `target` decide o destino: 'shared' adiciona a sharedImages;
   // { row: i } sobrescreve rows[i].imageUrl.
   const [pendingCrop, setPendingCrop] = useState<{
     src: string; name: string; target: 'shared' | { row: number }
   } | null>(null)
   const [uploading, setUploading] = useState(false)
+  // Template de código + separador família vêm de system_settings.
+  // Wizard sempre cria com família → o code de cada produto é montado como
+  // `<código base (casa template)><separador><valores das características>`.
+  // Sem template, mantém o fluxo antigo: prefixo livre + sufixo derivado.
+  const [codeTpl, setCodeTpl] = useState<CodeTemplatesRead | null>(null)
+  useEffect(() => {
+    codeTemplatesApi.get().then(setCodeTpl).catch(() => { /* opcional */ })
+  }, [])
+  const tplStr = codeTpl?.template ?? ''
+  const sepStr = codeTpl?.separator ?? ''
+  const sepMissing = !!tplStr && !sepStr
+  // Família já fixou os eixos da combinatória? Bloqueia adicionar mais
+  // characteristics — o universo de variações é definido pela família.
+  const familyLocksAxes = useMemo(() => {
+    if (base.family_id == null) return false
+    const fam = families.find(f => f.id === base.family_id)
+    return (fam?.characteristic_ids?.length ?? 0) > 0
+  }, [base.family_id, families])
 
   async function ensureValuesLoaded(characteristicId: number) {
     if (valuesCache[characteristicId]) return
@@ -115,6 +152,70 @@ export function ProductBulkWizardModal({
 
   // Categorias indentadas por hierarquia (mesmo padrão do ProductFormModal).
   const categoryRows = useMemo(() => flattenCategories(categories), [categories])
+
+  // Chaves controladas pela família selecionada — mesmo padrão do ProductFormModal.
+  // Quando a família tem defaults, os campos base correspondentes ficam travados
+  // e mostram o valor da família.
+  const managedKeys = useMemo<Set<string>>(() => {
+    if (base.family_id == null) return new Set()
+    const fam = families.find(f => f.id === base.family_id)
+    return new Set(Object.keys(fam?.defaults ?? {}))
+  }, [base.family_id, families])
+  const isManaged = (k: string) => managedKeys.has(k)
+
+  // Espelha defaults da família no `base` ao trocar de família, garantindo que
+  // os inputs travados exibam o valor real e que o bulk create grave esse valor.
+  useEffect(() => {
+    if (base.family_id == null) return
+    const fam = families.find(f => f.id === base.family_id)
+    const d = fam?.defaults
+    if (!d || Object.keys(d).length === 0) return
+    setBase(prev => ({
+      ...prev,
+      ...(d.price       != null ? { price:       String(d.price) }      : {}),
+      ...(d.cost        != null ? { cost:        String(d.cost) }       : {}),
+      ...(d.unit        != null ? { unit:        String(d.unit) }       : {}),
+      ...(d.brand       != null ? { brand:       String(d.brand) }      : {}),
+      ...(d.category_id != null ? { category_id: Number(d.category_id) }: {}),
+    }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [base.family_id, families])
+
+  // Popula eixos a partir das characteristics da família selecionada. Os eixos
+  // gerados ficam travados (não removíveis, characteristic não trocável) — só
+  // os valores ainda são escolhidos pelo usuário. Eixos extras adicionados
+  // manualmente para outras characteristics são preservados.
+  useEffect(() => {
+    if (base.family_id == null) {
+      setAxes(prev => prev.filter(a => !a.lockedFromFamily))
+      return
+    }
+    const fam = families.find(f => f.id === base.family_id)
+    const famCharIds = fam?.characteristic_ids ?? []
+    setAxes(prev => {
+      const userAxes = prev.filter(a =>
+        !a.lockedFromFamily && (a.characteristic_id == null || !famCharIds.includes(a.characteristic_id)),
+      )
+      const lockedAxes: Axis[] = famCharIds.map(cid => {
+        const existing = prev.find(a => a.characteristic_id === cid)
+        return { characteristic_id: cid, value_ids: existing?.value_ids ?? [], lockedFromFamily: true }
+      })
+      return [...lockedAxes, ...userAxes]
+    })
+    for (const cid of famCharIds) void ensureValuesLoaded(cid)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [base.family_id, families])
+
+  // Carrega as imagens já vinculadas à família selecionada para exibir como
+  // contexto visual (read-only). São gerenciadas no detalhe da família.
+  useEffect(() => {
+    if (base.family_id == null) { setExistingFamilyImages([]); return }
+    let cancelled = false
+    productImagesApi.listByFamily(base.family_id, { only_active: true })
+      .then(imgs => { if (!cancelled) setExistingFamilyImages(imgs) })
+      .catch(() => { if (!cancelled) setExistingFamilyImages([]) })
+    return () => { cancelled = true }
+  }, [base.family_id])
 
   function setAxisCharacteristic(idx: number, charId: number | null) {
     if (charId != null) {
@@ -160,17 +261,25 @@ export function ProductBulkWizardModal({
         const v = valuesCache[characteristic_id]?.find(x => x.id === value_id)
         return `${c?.name ?? '?'}: ${v?.value ?? '?'}`
       })
+      // Sufixo do code: une cada valor da combinação por separador apropriado
+      // (separador família quando há template; '-' senão).
+      const joiner = tplStr ? sepStr : '-'
       const codeSuffix = combo.map(({ value_id }) => {
         const allValues = Object.values(valuesCache).flat()
         const v = allValues.find(x => x.id === value_id)
         return (v?.value ?? '').toUpperCase().replace(/\s+/g, '')
-      }).filter(Boolean).join('-')
+      }).filter(Boolean).join(joiner)
       const nameSuffix = combo.map(({ value_id }) => {
         const allValues = Object.values(valuesCache).flat()
         return allValues.find(x => x.id === value_id)?.value ?? ''
       }).filter(Boolean).join(' / ')
+      // Com template: <código base formatado><sep><sufixo>. Sem template:
+      // <prefixo livre>-<sufixo> (comportamento antigo).
+      const code = tplStr
+        ? `${formatTemplate(tplStr, base.codePrefix.trim())}${sepStr}${codeSuffix}`
+        : `${base.codePrefix.trim()}${base.codePrefix.trim() ? '-' : ''}${codeSuffix}`
       return {
-        code: `${base.codePrefix.trim()}${base.codePrefix.trim() ? '-' : ''}${codeSuffix}`,
+        code,
         name: `${base.namePrefix.trim()} ${nameSuffix}`.trim(),
         price: base.price, cost: base.cost,
         links: combo, labels,
@@ -269,11 +378,11 @@ export function ProductBulkWizardModal({
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg flex items-center justify-center"
-              style={{ backgroundColor: 'var(--color-create)', color: 'var(--on-color-create)' }}>
+              style={{ backgroundColor: 'var(--color-2)', color: 'var(--on-color-2)' }}>
               <MagicWand size={18} />
             </div>
             <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100">
-              Wizard de combinações {step === 2 && <span className="text-xs text-gray-400 font-normal">· revisar</span>}
+              Wizard de família {step === 2 && <span className="text-xs text-gray-400 font-normal">· revisar</span>}
             </h2>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><X size={20} /></button>
@@ -291,18 +400,36 @@ export function ProductBulkWizardModal({
                     placeholder="Buscar ou criar família…" />
                 </div>
               </div>
-              <label className="block"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Prefixo do código</span>
-                <input value={base.codePrefix} onChange={e => setBase(b => ({ ...b, codePrefix: e.target.value }))} className={`${fieldCls} mt-1`} placeholder="ex: CAFE" /></label>
+              {/* Com template: input mascarado para o "código base" da família;
+                  cada row do passo 2 vira <base><sep><variação>. Sem template:
+                  prefixo livre concatenado com '-' (comportamento legado). */}
+              <label className="block">
+                <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">
+                  {tplStr ? 'Código base da família' : 'Prefixo do código'}
+                  {tplStr && <span className="ml-1 text-[10px] italic text-gray-500">(formato {tplStr}{sepStr}…)</span>}
+                </span>
+                <div className="mt-1">
+                  <TemplatedCodeInput value={base.codePrefix}
+                    onChange={v => setBase(b => ({ ...b, codePrefix: v }))}
+                    template={tplStr}
+                    placeholder={tplStr ? undefined : 'ex: CAFE'} />
+                </div>
+              </label>
               <label className="block"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Prefixo do nome</span>
                 <input value={base.namePrefix} onChange={e => setBase(b => ({ ...b, namePrefix: e.target.value }))} className={`${fieldCls} mt-1`} placeholder="ex: Café Especial" /></label>
-              <label className="block"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Preço base</span>
-                <div className="mt-1"><CurrencyInput value={base.price} onChange={v => setBase(b => ({ ...b, price: v }))} maxIntDigits={8} /></div></label>
-              <label className="block"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Custo base</span>
-                <div className="mt-1"><CurrencyInput value={base.cost} onChange={v => setBase(b => ({ ...b, cost: v }))} maxIntDigits={8} /></div></label>
-              <label className="block"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Unidade</span>
-                <input value={base.unit} onChange={e => setBase(b => ({ ...b, unit: e.target.value }))} className={`${fieldCls} mt-1`} /></label>
-              <label className="block"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Categoria</span>
-                <select value={base.category_id ?? ''} onChange={e => setBase(b => ({ ...b, category_id: e.target.value === '' ? null : Number(e.target.value) }))} className={`${fieldCls} mt-1`}>
+              {sepMissing && (
+                <p className="col-span-2 text-[11px] text-amber-700 dark:text-amber-400">
+                  Template de código configurado, mas separador família não definido — configure em <span className="font-mono">Configurações → Códigos</span>.
+                </p>
+              )}
+              <label className="block"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Preço base{isManaged('price') && <ManagedHint />}</span>
+                <div className="mt-1"><CurrencyInput value={base.price} onChange={v => setBase(b => ({ ...b, price: v }))} maxIntDigits={8} disabled={isManaged('price')} /></div></label>
+              <label className="block"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Custo base{isManaged('cost') && <ManagedHint />}</span>
+                <div className="mt-1"><CurrencyInput value={base.cost} onChange={v => setBase(b => ({ ...b, cost: v }))} maxIntDigits={8} disabled={isManaged('cost')} /></div></label>
+              <label className="block"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Unidade{isManaged('unit') && <ManagedHint />}</span>
+                <input value={base.unit} onChange={e => setBase(b => ({ ...b, unit: e.target.value }))} className={`${fieldCls} mt-1`} disabled={isManaged('unit')} /></label>
+              <label className="block"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Categoria{isManaged('category_id') && <ManagedHint />}</span>
+                <select value={base.category_id ?? ''} onChange={e => setBase(b => ({ ...b, category_id: e.target.value === '' ? null : Number(e.target.value) }))} className={`${fieldCls} mt-1`} disabled={isManaged('category_id')}>
                   <option value="">— Sem categoria —</option>
                   {categoryRows.map(({ cat, depth }) => (
                     <option key={cat.id} value={cat.id}>
@@ -310,8 +437,8 @@ export function ProductBulkWizardModal({
                     </option>
                   ))}
                 </select></label>
-              <label className="block col-span-2"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Marca</span>
-                <input value={base.brand} onChange={e => setBase(b => ({ ...b, brand: e.target.value }))} className={`${fieldCls} mt-1`} /></label>
+              <label className="block col-span-2"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Marca{isManaged('brand') && <ManagedHint />}</span>
+                <input value={base.brand} onChange={e => setBase(b => ({ ...b, brand: e.target.value }))} className={`${fieldCls} mt-1`} disabled={isManaged('brand')} /></label>
             </div>
 
             <div>
@@ -334,11 +461,19 @@ export function ProductBulkWizardModal({
                     <div key={i} className="space-y-1">
                       <div className="flex items-center gap-2">
                         <div className="flex-1">
-                          <CharacteristicCombobox value={a.characteristic_id}
-                            onChange={id => setAxisCharacteristic(i, id)}
-                            options={characteristics}
-                            excludeIds={Array.from(usedCharIds).filter(id => id !== a.characteristic_id)}
-                            onCreate={createCharacteristic} />
+                          {a.lockedFromFamily ? (
+                            <div className="w-full px-3 py-2 text-sm box-border min-h-[38px] rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-200 flex items-center justify-between gap-2 opacity-80 cursor-not-allowed"
+                              title="Definida pela família — edite no detalhe da família">
+                              <span>{characteristics.find(c => c.id === a.characteristic_id)?.name ?? `#${a.characteristic_id}`}</span>
+                              <span className="text-[10px] italic text-gray-500 dark:text-gray-400">(família)</span>
+                            </div>
+                          ) : (
+                            <CharacteristicCombobox value={a.characteristic_id}
+                              onChange={id => setAxisCharacteristic(i, id)}
+                              options={characteristics}
+                              excludeIds={Array.from(usedCharIds).filter(id => id !== a.characteristic_id)}
+                              onCreate={createCharacteristic} />
+                          )}
                         </div>
                         <div className="flex-1">
                           <CharacteristicValueCombobox value={null}
@@ -351,7 +486,8 @@ export function ProductBulkWizardModal({
                               : undefined} />
                         </div>
                         <button type="button" onClick={() => setAxes(xs => xs.filter((_, k) => k !== i))}
-                          className="text-gray-400 hover:text-red-600 px-2"><Trash size={15} /></button>
+                          className={`text-gray-400 hover:text-red-600 px-2 ${a.lockedFromFamily ? 'invisible' : ''}`}
+                          disabled={a.lockedFromFamily}><Trash size={15} /></button>
                       </div>
                       {a.characteristic_id != null && a.value_ids.length > 0 && (
                         <div className="flex flex-wrap gap-1 pl-1">
@@ -373,10 +509,15 @@ export function ProductBulkWizardModal({
                     </div>
                   )
                 })}
-                <button type="button" onClick={() => setAxes(xs => [...xs, { characteristic_id: null, value_ids: [] }])}
-                  className="text-xs inline-flex items-center gap-1 text-[var(--color-1)] hover:underline">
+                <button type="button" disabled={familyLocksAxes}
+                  onClick={() => setAxes(xs => [...xs, { characteristic_id: null, value_ids: [] }])}
+                  title={familyLocksAxes ? 'Família já define as características — edite no detalhe da família.' : undefined}
+                  className="text-xs inline-flex items-center gap-1 text-[var(--color-1)] hover:underline disabled:text-gray-400 disabled:no-underline disabled:cursor-not-allowed">
                   <Plus size={12} /> Adicionar característica
                 </button>
+                {familyLocksAxes && (
+                  <p className="text-[11px] text-gray-400 mt-1 italic">Família já define as características — edite no detalhe da família.</p>
+                )}
               </div>
               <p className="text-xs text-gray-400 mt-2">Combinações geradas: <strong>{combos.length}</strong></p>
             </div>
@@ -387,18 +528,30 @@ export function ProductBulkWizardModal({
               Revisar e ajustar cada produto. Ao salvar, todos serão criados com a família <strong>{familyName || `#${base.family_id}`}</strong>.
             </p>
 
-            {/* Galeria compartilhada da família: anexada com family_id após o
-                bulk create — todos os produtos da família passam a vê-las.
-                Override por produto vai na coluna "Imagem" da tabela abaixo. */}
+            {/* Galeria compartilhada da família: as já vinculadas (read-only,
+                editadas no detalhe da família) + as novas a anexar com
+                family_id após o bulk create. Override por produto vai na
+                coluna "Imagem" da tabela abaixo. */}
             <div>
               <span className="text-xs font-semibold text-gray-600 dark:text-gray-300 inline-flex items-center gap-1">
                 <ImageIcon size={13} /> Imagens compartilhadas pela família
               </span>
-              <p className="text-[11px] text-gray-400 mt-0.5">Aplicadas a todos os produtos criados. Cada produto pode ter uma imagem própria na tabela abaixo.</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">
+                Aplicadas a todos os produtos criados. As marcadas com <strong>(família)</strong> já estão vinculadas e são editadas no detalhe da família.
+              </p>
               <div className="mt-2 grid grid-cols-6 gap-2">
+                {existingFamilyImages.map(img => (
+                  <div key={`fam-${img.id}`} className="relative aspect-square bg-gray-100 dark:bg-gray-900 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700"
+                    title="Definida pela família — edite no detalhe da família">
+                    <img src={img.url} alt={img.alt_text ?? ''} className="w-full h-full object-cover opacity-90" />
+                    <span className="absolute top-1 left-1 text-[9px] px-1 py-0.5 rounded bg-black/60 text-white uppercase tracking-wider">família</span>
+                  </div>
+                ))}
                 {sharedImages.map((url, idx) => (
                   <div key={url} className="relative aspect-square bg-gray-100 dark:bg-gray-900 rounded-lg overflow-hidden group">
                     <img src={url} alt="" className="w-full h-full object-cover" />
+                    <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-amber-500/90 text-white text-[9px] font-semibold uppercase tracking-wider"
+                      title="Pendente — será vinculada à família ao salvar">Pendente</span>
                     <button type="button" onClick={() => removeSharedImage(idx)}
                       className="absolute top-1 right-1 p-1 rounded bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600">
                       <Trash size={10} />
@@ -449,7 +602,11 @@ export function ProductBulkWizardModal({
                       <td className="py-2 text-xs text-gray-500 dark:text-gray-400">
                         {r.labels.join(', ')}
                       </td>
-                      <td className="py-2"><input value={r.code} onChange={e => updateRow(i, { code: e.target.value })} className={`${fieldCls} text-xs font-mono`} /></td>
+                      <td className="py-2"><TemplatedCodeInput value={r.code}
+                        onChange={v => updateRow(i, { code: v })}
+                        template={tplStr}
+                        freeAfter={tplStr && sepStr ? sepStr : undefined}
+                        className={`${fieldCls} text-xs font-mono`} /></td>
                       <td className="py-2"><input value={r.name} onChange={e => updateRow(i, { name: e.target.value })} className={`${fieldCls} text-xs`} /></td>
                       <td className="py-2"><CurrencyInput value={r.price} onChange={v => updateRow(i, { price: v })} maxIntDigits={8} /></td>
                       <td className="py-2 text-right pr-2"><button onClick={() => removeRow(i)} className="text-gray-400 hover:text-red-600"><Trash size={14} /></button></td>

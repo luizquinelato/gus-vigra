@@ -81,6 +81,8 @@ FAMILY_MANAGED_FIELD_OPTIONS: list[dict[str, str]] = [
     {"key": "brand",             "label": "Marca",                  "type": "string"},
     {"key": "category_id",       "label": "Categoria",              "type": "category"},
     {"key": "unit",              "label": "Unidade",                "type": "string"},
+    {"key": "price",             "label": "Preço de venda",         "type": "currency"},
+    {"key": "cost",              "label": "Custo",                  "type": "currency"},
     {"key": "description",       "label": "Descrição completa",     "type": "html"},
     {"key": "short_description", "label": "Descrição curta",        "type": "text"},
     {"key": "ncm",               "label": "NCM",                    "type": "string"},

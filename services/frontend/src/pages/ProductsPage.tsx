@@ -245,8 +245,9 @@ export default function ProductsPage() {
 
       <div className="flex justify-end gap-2">
         <button onClick={() => setOpenWizard(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
-          <MagicWand size={15} /> Wizard de combinações
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold border-none hover:opacity-90 transition-opacity"
+          style={{ background: 'var(--color-2)', color: 'var(--on-color-2)' }}>
+          <MagicWand size={15} /> Wizard de família
         </button>
         <button onClick={() => { setEditing(null); setOpenForm(true) }}
           className="inline-flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold border-none"

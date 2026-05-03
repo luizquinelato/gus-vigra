@@ -154,6 +154,9 @@ def apply(conn):
             ("font_contrast_threshold", "0.5",   "WCAG font contrast threshold"),
             ("default_language",        "pt-BR", "Default UI language"),
             ("default_timezone",        "America/Sao_Paulo", "Default timezone"),
+            ("product_code_template",          "", "Template DSL para código de produto (vazio = sem enforcement). Aplica-se a produto avulso e ao prefixo de produtos de família."),
+            ("product_code_family_separator",  "", "Caractere único usado pelo wizard de família para separar o código base das variações (obrigatório se template definido)."),
+            ("product_code_allow_legacy",      "true", "Se true, produtos legados com código fora do template apenas exibem aviso"),
         ]
         for key, value, desc in settings:
             cur.execute(
@@ -227,6 +230,7 @@ def apply(conn):
             ("cores",    "Cores",                "/color-settings", "Configurações",  "admin"),
             ("paginas",  "Páginas",              "/admin/pages",    "Configurações",  "admin"),
             ("roles",    "Papéis",                "/admin/roles",    "Configurações",  "admin"),
+            ("codigos",  "Códigos",              "/admin/code-templates", "Configurações", "admin"),
         ]
         for page_key, label, route, group_label, min_role in pages:
             cur.execute(

@@ -63,6 +63,10 @@ from app.core.event_bus import EventBus
 from app.core.html_sanitizer import sanitize_html, sanitize_plain
 from app.dependencies.auth import require_authentication
 from app.modules.cadastros import events as evt
+from app.modules.cadastros.code_template import (
+    format_value as _tpl_format,
+    validate_value as _tpl_validate,
+)
 from app.modules.cadastros.schemas import (
     FAMILY_MANAGED_FIELD_KEYS, FAMILY_MANAGED_FIELD_OPTIONS,
     CampaignCreate, CampaignOut, CampaignUpdate,
@@ -716,6 +720,112 @@ def _sanitize_product_payload(payload: dict) -> dict:
     return payload
 
 
+# ── Code template (system_settings) ───────────────────────────────────────────
+
+_CODE_TPL_KEY        = "product_code_template"
+_CODE_FAM_SEP_KEY    = "product_code_family_separator"
+_CODE_TPL_LEGACY_KEY = "product_code_allow_legacy"
+
+
+async def _load_code_templates(db: AsyncSession, tenant_id: int) -> dict[str, Any]:
+    """Carrega os 3 settings de código (template + separador família + legacy)."""
+    rows = await db.execute(
+        text("""
+            SELECT setting_key, setting_value
+            FROM   system_settings
+            WHERE  tenant_id = :tid
+              AND  active = TRUE
+              AND  setting_key IN (:k_tpl, :k_sep, :k_legacy)
+        """),
+        {"tid": tenant_id,
+         "k_tpl":    _CODE_TPL_KEY,
+         "k_sep":    _CODE_FAM_SEP_KEY,
+         "k_legacy": _CODE_TPL_LEGACY_KEY},
+    )
+    raw = {r.setting_key: r.setting_value for r in rows.fetchall()}
+    template  = (raw.get(_CODE_TPL_KEY)        or "").strip()
+    # Separador deve ser exatamente 1 caractere; se vier vazio/maior, ignora.
+    sep_raw   = (raw.get(_CODE_FAM_SEP_KEY)    or "")
+    separator = sep_raw if len(sep_raw) == 1 else ""
+    legacy    = (raw.get(_CODE_TPL_LEGACY_KEY) or "true").strip().lower() in ("1", "true", "yes")
+    return {"template": template, "separator": separator, "allow_legacy": legacy}
+
+
+async def _enforce_code_template(
+    db: AsyncSession,
+    tenant_id: int,
+    code: str | None,
+    family_id: int | None,
+) -> str | None:
+    """Aplica o template ao `code`. Retorna o código (parcialmente) formatado.
+
+    Modelo:
+      - Produto avulso (sem família): code casa com `template` exatamente.
+      - Produto com família: code = <prefixo casando com template><sep><resto livre>.
+        Apenas o prefixo é formatado; o sufixo é mantido como veio.
+      - Template vazio: sem enforcement (retorna code).
+      - allow_legacy=true: divergências viram warning no frontend (mantém raw).
+      - allow_legacy=false: 400.
+    """
+    if not code:
+        return code
+    cfg = await _load_code_templates(db, tenant_id)
+    template = cfg["template"]
+    if not template:
+        return code
+
+    if family_id is None:
+        formatted = _tpl_format(template, code)
+        if _tpl_validate(template, formatted):
+            return formatted
+        if cfg["allow_legacy"]:
+            return code
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail=(f"Código '{code}' não respeita o template '{template}'. "
+                    "Use A=letra, a=letra minúscula, 9=dígito, *=letra ou dígito."),
+        )
+
+    # Produto com família: precisa de separador configurado.
+    sep = cfg["separator"]
+    if not sep:
+        if cfg["allow_legacy"]:
+            return code
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Separador de família ausente em system_settings (product_code_family_separator).",
+        )
+    head, found, tail = code.partition(sep)
+    if not found or not tail:
+        # Sem separador no code recebido — tenta tratar tudo como prefixo.
+        formatted = _tpl_format(template, code)
+        if cfg["allow_legacy"]:
+            return code
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail=(f"Código '{code}' deve seguir '<{template}>{sep}<variação>'."),
+        )
+    formatted_head = _tpl_format(template, head)
+    if not _tpl_validate(template, formatted_head):
+        if cfg["allow_legacy"]:
+            return code
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail=(f"Prefixo '{head}' do código '{code}' não respeita o template '{template}'."),
+        )
+    return f"{formatted_head}{sep}{tail}"
+
+
+@router.get("/code-templates")
+async def get_code_templates(
+    db: AsyncSession = Depends(get_db_session),
+    user: dict = Depends(require_authentication),
+) -> dict[str, Any]:
+    """Retorna o template de código, separador família e flag legacy.
+    Disponível a todos os usuários autenticados — admin altera via /settings/{key}."""
+    return await _load_code_templates(db, user["tenant_id"])
+
+
 @router.post("/products", response_model=ProductOut, status_code=status.HTTP_201_CREATED)
 async def create_product(
     body: ProductCreate,
@@ -723,9 +833,13 @@ async def create_product(
     user: dict = Depends(require_authentication),
 ):
     await _assert_family_owned(db, body.family_id, user["tenant_id"])
+    payload = _sanitize_product_payload(body.model_dump())
+    payload["code"] = await _enforce_code_template(
+        db, user["tenant_id"], payload.get("code"), payload.get("family_id"),
+    )
     cols = ", ".join(_PRODUCT_INSERT_COLS) + ", tenant_id"
     placeholders = ", ".join(f":{c}" for c in _PRODUCT_INSERT_COLS) + ", :tid"
-    params = {**_sanitize_product_payload(body.model_dump()), "tid": user["tenant_id"]}
+    params = {**payload, "tid": user["tenant_id"]}
     try:
         row = await _fetch_one(db,
             f"INSERT INTO products ({cols}) VALUES ({placeholders}) RETURNING *",
@@ -768,7 +882,11 @@ async def bulk_create_products(
             payload = item.model_dump(exclude={"characteristics"})
             if body.family_id and not payload.get("family_id"):
                 payload["family_id"] = body.family_id
-            params = {**_sanitize_product_payload(payload), "tid": user["tenant_id"]}
+            payload = _sanitize_product_payload(payload)
+            payload["code"] = await _enforce_code_template(
+                db, user["tenant_id"], payload.get("code"), payload.get("family_id"),
+            )
+            params = {**payload, "tid": user["tenant_id"]}
             row = await _fetch_one(db, sql, params)
             created.append(row)
             if item.characteristics:
@@ -845,6 +963,19 @@ async def update_product(
         await _assert_family_owned(db, payload["family_id"], user["tenant_id"])
 
     payload = _sanitize_product_payload(payload)
+    if "code" in payload and payload["code"]:
+        # Família efetiva: nova (se vier no payload) ou a atual no banco.
+        if "family_id" in payload:
+            eff_fid = payload["family_id"]
+        else:
+            current = await _fetch_one(db,
+                "SELECT family_id FROM products WHERE id = :id AND tenant_id = :tid",
+                {"id": product_id, "tid": user["tenant_id"]},
+            )
+            eff_fid = current["family_id"] if current else None
+        payload["code"] = await _enforce_code_template(
+            db, user["tenant_id"], payload["code"], eff_fid,
+        )
     set_clause, params = _build_set_clause(payload)
     params.update({"id": product_id, "tid": user["tenant_id"]})
 

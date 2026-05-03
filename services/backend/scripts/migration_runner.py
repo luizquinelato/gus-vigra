@@ -11,6 +11,7 @@ Usage (from project root):
     python services/backend/scripts/migration_runner.py --new "add_products_table"
     python services/backend/scripts/migration_runner.py --rollback-to 0002
     python services/backend/scripts/migration_runner.py --rollback-to 0000 --confirm
+    python services/backend/scripts/migration_runner.py --cleanup-uploads
 """
 import os
 import sys
@@ -29,6 +30,10 @@ if hasattr(sys.stdout, "reconfigure"):
 SCRIPT_DIR    = Path(__file__).resolve().parent
 MIGRATIONS_DIR = SCRIPT_DIR / "migrations"
 PROJECT_ROOT  = SCRIPT_DIR.parent.parent.parent   # services/backend/scripts → project root
+UPLOADS_DIR   = SCRIPT_DIR.parent / "uploads"     # services/backend/uploads
+# Subdiretórios de uploads que são limpos no full reset / --cleanup-uploads.
+# Adicione aqui novos módulos que persistirem arquivos no FS (ex.: 'documents').
+UPLOADS_SUBDIRS = ["products", "avatars"]
 
 
 # ── Database connection ────────────────────────────────────────────────────────
@@ -294,6 +299,7 @@ def cmd_rollback_to(conn, target: str, confirm: bool):
         print("\n🧹 Full reset — cleaning up external services...")
         cmd_qdrant_cleanup(confirm=True)
         cmd_rabbit_cleanup(confirm=True)
+        cmd_uploads_cleanup(confirm=True)
 
 
 def cmd_qdrant_cleanup(confirm: bool = False) -> bool:
@@ -402,6 +408,58 @@ def cmd_rabbit_cleanup(confirm: bool = False) -> bool:
         print(f"❌  RabbitMQ connection failed: {e}"); return False
 
 
+def cmd_uploads_cleanup(confirm: bool = False) -> bool:
+    """Wipe physical files under services/backend/uploads/{subdir}/.
+    Preserves directories e qualquer marcador '.gitkeep' para que o mount
+    StaticFiles do FastAPI continue funcionando após a limpeza."""
+    print(f"\n🧹 Uploads cleanup — {UPLOADS_DIR}")
+    if not UPLOADS_DIR.exists():
+        print("ℹ️   uploads/ directory not found — skipping."); return True
+
+    targets: list[tuple[Path, int]] = []
+    for sub in UPLOADS_SUBDIRS:
+        d = UPLOADS_DIR / sub
+        if not d.exists():
+            continue
+        files = [p for p in d.rglob("*") if p.is_file() and p.name != ".gitkeep"]
+        targets.append((d, len(files)))
+
+    total = sum(c for _, c in targets)
+    if total == 0:
+        print("ℹ️   No files to delete."); return True
+
+    print(f"📋  Found {total} file(s) across {len(targets)} subdirectory(ies):")
+    for d, c in targets:
+        print(f"     • {d.relative_to(UPLOADS_DIR)}/  → {c} file(s)")
+
+    if not confirm:
+        answer = input(f"\n⚠️  Delete ALL {total} file(s)? Type 'DELETE ALL': ")
+        if answer != "DELETE ALL":
+            print("❌  Cancelled."); return False
+
+    deleted = failed = 0
+    for d, _ in targets:
+        # Apaga arquivos (preservando .gitkeep).
+        for p in d.rglob("*"):
+            if p.is_file() and p.name != ".gitkeep":
+                try:
+                    p.unlink(); deleted += 1
+                except Exception as e:
+                    print(f"   ⚠️   {p} — {e}"); failed += 1
+        # Remove subdiretórios vazios remanescentes (ex.: pastas por tenant_id),
+        # do mais profundo pro mais raso. O diretório `d` em si é preservado.
+        subdirs = sorted([p for p in d.rglob("*") if p.is_dir()],
+                         key=lambda x: -len(x.parts))
+        for sd in subdirs:
+            try:
+                sd.rmdir()
+            except OSError:
+                pass  # não vazio — ok, mantém
+
+    print(f"\n✅  Uploads cleanup done. Deleted: {deleted}  Failed: {failed}")
+    return failed == 0
+
+
 def cmd_new(name: str):
     files = list_migration_files()
     next_version = f"{len(files) + 1:04d}"
@@ -434,12 +492,17 @@ if __name__ == "__main__":
     grp.add_argument("--apply-to",      metavar="VERSION",     help="Apply pending migrations up to VERSION")
     grp.add_argument("--new",           metavar="NAME",        help="Create a new migration template")
     grp.add_argument("--rollback-to",   metavar="VERSION",     help="Rollback to VERSION (0000 = full reset)")
-    parser.add_argument("--confirm",    action="store_true",   help="Required for --rollback-to 0000")
+    grp.add_argument("--cleanup-uploads", action="store_true", help="Wipe physical files under services/backend/uploads/")
+    parser.add_argument("--confirm",    action="store_true",   help="Skip interactive prompt (required for --rollback-to 0000)")
     args = parser.parse_args()
 
     if args.new:
         cmd_new(args.new)
         sys.exit(0)
+
+    if args.cleanup_uploads:
+        ok = cmd_uploads_cleanup(confirm=args.confirm)
+        sys.exit(0 if ok else 1)
 
     conn = get_connection()
     try:

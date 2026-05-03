@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { NavLink, useNavigate, useLocation } from 'react-router-dom'
-import { House, Palette, User, SignOut, Gear, CaretRight, CaretLeft, Sun, Moon, ShieldCheck, SquaresFour, Tray, Database, Tag, Package, CurrencyDollar, Megaphone, Broadcast, FolderSimple, Stack, Sliders } from '@phosphor-icons/react'
+import { NavLink, Link, useNavigate, useLocation } from 'react-router-dom'
+import { House, Palette, User, SignOut, Gear, CaretRight, CaretLeft, Sun, Moon, ShieldCheck, SquaresFour, Tray, Database, Tag, Package, CurrencyDollar, Megaphone, Broadcast, FolderSimple, Stack, Sliders, Hash } from '@phosphor-icons/react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/useTheme'
 import apiClient from '../services/apiClient'
@@ -79,26 +79,35 @@ function Flyout({ anchorRef, open, onClose, children, isDark, alignBottom }: Fly
 }
 
 interface FlyoutItemProps {
-  icon: React.ElementType; label: string; onClick: () => void
+  icon: React.ElementType; label: string; onClick?: () => void
+  /** Quando informado, renderiza como <Link> (suporta Ctrl/Middle/Right-click
+   *  para abrir em nova aba). Sem `to`, renderiza como <button> (ações puras). */
+  to?: string
   danger?: boolean; isDark?: boolean
 }
-function FlyoutItem({ icon: Icon, label, onClick, danger, isDark }: FlyoutItemProps) {
+function FlyoutItem({ icon: Icon, label, onClick, to, danger, isDark }: FlyoutItemProps) {
   const [hov, setHov] = useState(false)
   const hovBg  = hov ? (danger ? (isDark ? 'rgba(239,68,68,0.15)' : '#fef2f2') : (isDark ? '#252B42' : '#f8fafc')) : 'transparent'
   const color  = danger ? (isDark ? '#f87171' : '#ef4444') : (isDark ? '#E2E8F0' : '#334155')
+  const style = {
+    display: 'flex', alignItems: 'center', gap: 10,
+    width: '100%', padding: '9px 16px',
+    background: hovBg, border: 'none', cursor: 'pointer',
+    textAlign: 'left' as const, color, fontSize: 14, fontWeight: 500,
+    textDecoration: 'none', transition: 'background .12s',
+  }
+  const inner = (<><Icon size={16} style={{ flexShrink: 0 }} />{label}</>)
+  if (to) {
+    return (
+      <Link to={to} onClick={onClick}
+        onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+        style={style}>{inner}</Link>
+    )
+  }
   return (
     <button onClick={onClick}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      style={{
-        display: 'flex', alignItems: 'center', gap: 10,
-        width: '100%', padding: '9px 16px',
-        background: hovBg, border: 'none', cursor: 'pointer',
-        textAlign: 'left', color, fontSize: 14, fontWeight: 500,
-        transition: 'background .12s',
-      }}>
-      <Icon size={16} style={{ flexShrink: 0 }} />
-      {label}
-    </button>
+      style={style}>{inner}</button>
   )
 }
 
@@ -211,7 +220,6 @@ interface NavGroupProps {
 }
 function NavGroup({ icon: Icon, label, collapsed, isDark, routes, items, selBg, selColor, content, muted, overlay }: NavGroupProps) {
   const location = useLocation()
-  const navigate = useNavigate()
   const isActive = routes.some(r => location.pathname.startsWith(r))
   const [open, setOpen] = useState(false)
   const [hov,  setHov]  = useState(false)
@@ -247,7 +255,7 @@ function NavGroup({ icon: Icon, label, collapsed, isDark, routes, items, selBg, 
         <div style={{ padding: '4px 0' }}>
           {items.map(item => (
             <FlyoutItem key={item.to} icon={item.icon} label={item.label} isDark={isDark}
-              onClick={() => { setOpen(false); navigate(item.to) }} />
+              to={item.to} onClick={() => setOpen(false)} />
           ))}
         </div>
       </Flyout>
@@ -455,10 +463,11 @@ export default function Sidebar() {
                 <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'var(--color-1)' }}>Configurações</p>
               </div>
               <div style={{ padding: '4px 0' }}>
-                <FlyoutItem icon={Palette}       label="Cores"    isDark={isDark} onClick={() => { setSettingsOpen(false); navigate('/color-settings') }} />
-                <FlyoutItem icon={SquaresFour}   label="Páginas"  isDark={isDark} onClick={() => { setSettingsOpen(false); navigate('/admin/pages') }} />
-                <FlyoutItem icon={ShieldCheck}   label="Papéis"   isDark={isDark} onClick={() => { setSettingsOpen(false); navigate('/admin/roles') }} />
-                <FlyoutItem icon={Tray}          label="Outbox"   isDark={isDark} onClick={() => { setSettingsOpen(false); navigate('/admin/outbox') }} />
+                <FlyoutItem icon={Palette}       label="Cores"    isDark={isDark} to="/color-settings"      onClick={() => setSettingsOpen(false)} />
+                <FlyoutItem icon={Hash}          label="Códigos"  isDark={isDark} to="/admin/code-templates" onClick={() => setSettingsOpen(false)} />
+                <FlyoutItem icon={SquaresFour}   label="Páginas"  isDark={isDark} to="/admin/pages"          onClick={() => setSettingsOpen(false)} />
+                <FlyoutItem icon={ShieldCheck}   label="Papéis"   isDark={isDark} to="/admin/roles"          onClick={() => setSettingsOpen(false)} />
+                <FlyoutItem icon={Tray}          label="Outbox"   isDark={isDark} to="/admin/outbox"         onClick={() => setSettingsOpen(false)} />
               </div>
             </Flyout>
           </>
@@ -520,7 +529,7 @@ export default function Sidebar() {
             </div>
           </div>
           <div style={{ padding: '4px 0' }}>
-            <FlyoutItem icon={User}    label="Meu Perfil"    isDark={isDark} onClick={() => { setProfileOpen(false); navigate('/profile') }} />
+            <FlyoutItem icon={User}    label="Meu Perfil"    isDark={isDark} to="/profile" onClick={() => setProfileOpen(false)} />
             <FlyoutItem icon={SignOut} label="Sair da conta" isDark={isDark} onClick={() => { setProfileOpen(false); handleLogout() }} danger />
           </div>
         </Flyout>
