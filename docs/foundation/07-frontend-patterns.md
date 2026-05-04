@@ -1246,3 +1246,73 @@ apiClient.interceptors.response.use(
 `useEffect` roda **após** o browser pintar a tela — o usuário veria um flash da home page (`/`) antes de ser redirecionado. `useLayoutEffect` roda **antes** do paint, na fase de commit do React, eliminando o flash completamente.
 
 > **Regra:** nunca use `?redirect=http://localhost:3344/path` na URL de login. Sempre use `?etl=1` + `sessionStorage` para manter as URLs limpas e sem exposição de porta ou token.
+
+---
+
+## 📋 14. Tabelas de Listagem (Data Tables)
+
+Toda página de listagem de entidades (Cadastros, Estoque, Compras, etc.) deve usar o mesmo shell de tabela. Referências canônicas: `ProductsPage.tsx`, `FamiliesPage.tsx`, `WarehousesPage.tsx`.
+
+### Anatomia obrigatória
+
+1. **`<section>` wrapper** com `overflow-hidden` (sem padding interno — a tabela ocupa a borda).
+2. **`<div className="overflow-x-auto">`** envolvendo a `<table>` para scroll horizontal em telas estreitas.
+3. **Coluna-espelho de 4px** (`<th className="w-1 p-0" aria-hidden />` + `<td className="w-1 p-0" aria-hidden />`) — espaço onde a barra de hover se desenha sem deslocar conteúdo.
+4. **Coluna `#`** (índice 1-based, `font-mono`) — sempre a primeira coluna útil.
+5. **Header padronizado:** `px-3 py-3 text-xs font-medium uppercase tracking-wider text-gray-700 dark:text-gray-300`.
+6. **`<tbody>`** com `divide-y divide-gray-200 dark:divide-gray-700`.
+7. **Hover `<tr>`** com borda colorida à esquerda via `boxShadow inset` (cinza no estado neutro, `var(--color-1)` no hover) — efeito imperativo para usar a cor do tenant em runtime.
+8. **Coluna "Ações"** sempre rotulada (`<th>Ações</th>`), nunca uma coluna sem texto.
+9. **Cells de dado** com `px-3 py-3.5`.
+
+### Snippet canônico
+
+```tsx
+<section className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
+  {loading ? <p className="text-sm text-gray-400 p-6">Carregando...</p>
+   : items.length === 0 ? <p className="text-sm text-gray-400 p-6">Nenhum registro.</p>
+   : (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
+          <tr>
+            <th className="w-1 p-0" aria-hidden />
+            <th className="px-3 py-3 w-12 text-xs font-medium uppercase tracking-wider text-gray-700 dark:text-gray-300 text-left">#</th>
+            <th className="px-3 py-3 text-xs font-medium uppercase tracking-wider text-gray-700 dark:text-gray-300 text-left">Nome</th>
+            {/* ...demais colunas... */}
+            <th className="px-3 py-3 w-20 text-xs font-medium uppercase tracking-wider text-gray-700 dark:text-gray-300 text-left">Ações</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+          {items.map((row, i) => (
+            <tr key={row.id}
+              className="group hover:bg-gray-50 dark:hover:bg-gray-700 transition-all shadow-[inset_4px_0_0_0_#d1d5db] dark:shadow-[inset_4px_0_0_0_#4b5563]"
+              onMouseEnter={e => { e.currentTarget.style.boxShadow = 'inset 4px 0 0 0 var(--color-1)' }}
+              onMouseLeave={e => { e.currentTarget.style.boxShadow = '' }}>
+              <td className="w-1 p-0" aria-hidden />
+              <td className="px-3 py-3.5 text-left">
+                <span className="text-xs font-mono text-gray-500 dark:text-gray-400">{i + 1}</span>
+              </td>
+              <td className="px-3 py-3.5 font-semibold text-gray-800 dark:text-gray-100">{row.name}</td>
+              {/* ...demais células... */}
+              <td className="px-3 py-3.5">
+                <button onClick={() => onEdit(row)} className="p-2 rounded-lg text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors" title="Editar">
+                  <Pencil size={16} />
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )}
+</section>
+```
+
+### Exceção: editores inline em modais
+
+Tabelas dentro de modais que recebem `<input>` / `<select>` por linha (ex.: `CreateModal` de Pedidos de Compra, grid de itens em `QuickEntryPage`) **não** seguem este padrão. Elas mantêm `py-1.5` / `py-2` no `<tbody>` para evitar gaps verticais entre os campos. Mas o `<thead>` dessas tabelas **deve** continuar usando o mesmo `text-xs font-medium uppercase tracking-wider` para coerência visual.
+
+### Por que `boxShadow` imperativo (e não Tailwind)?
+
+A cor de hover usa `var(--color-1)`, que vem do tenant em runtime. Tailwind compila classes estáticas — não há como fazer `hover:shadow-[inset_4px_0_0_0_var(--color-1)]` funcionar com a cor dinâmica. A abordagem `onMouseEnter` / `onMouseLeave` resolve isso e mantém o estado "neutro" (cinza) também via `shadow-[inset_...]` no className.

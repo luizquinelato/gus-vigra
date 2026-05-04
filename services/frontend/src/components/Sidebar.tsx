@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { NavLink, Link, useNavigate, useLocation } from 'react-router-dom'
-import { House, Palette, User, SignOut, Gear, CaretRight, CaretLeft, Sun, Moon, ShieldCheck, SquaresFour, Tray, Database, Tag, Package, CurrencyDollar, Megaphone, Broadcast, FolderSimple, Stack, Sliders, Hash } from '@phosphor-icons/react'
+import { House, Palette, User, SignOut, Gear, CaretRight, CaretLeft, Sun, Moon, ShieldCheck, SquaresFour, Tray, Database, Tag, Package, CurrencyDollar, Megaphone, Broadcast, FolderSimple, Stack, Sliders, Hash, ShoppingCart, Storefront, ClipboardText, Lightning, Warehouse, ArrowsLeftRight, ChartBar, ListChecks } from '@phosphor-icons/react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/useTheme'
 import apiClient from '../services/apiClient'
@@ -391,6 +391,28 @@ export default function Sidebar() {
             { to: '/cadastros/tabelas-preco',   label: 'Tabelas de Preço', icon: CurrencyDollar },
             { to: '/cadastros/promocoes',       label: 'Promoções',        icon: Megaphone },
             { to: '/cadastros/campanhas',       label: 'Campanhas',        icon: Broadcast },
+          ]}
+          selBg={selBg} selColor={selColor} content={content} muted={muted} overlay={overlay}
+        />
+        <NavGroup
+          icon={ShoppingCart} label="Compras" collapsed={collapsed} isDark={isDark}
+          routes={['/compras']}
+          items={[
+            { to: '/compras/entrada-rapida', label: 'Entrada Rápida',     icon: Lightning },
+            { to: '/compras/pedidos',        label: 'Pedidos de Compra',  icon: ClipboardText },
+            { to: '/compras/cotacoes',       label: 'Cotações',           icon: ListChecks },
+            { to: '/compras/fornecedores',   label: 'Fornecedores',       icon: Storefront },
+          ]}
+          selBg={selBg} selColor={selColor} content={content} muted={muted} overlay={overlay}
+        />
+        <NavGroup
+          icon={Package} label="Estoque" collapsed={collapsed} isDark={isDark}
+          routes={['/estoque']}
+          items={[
+            { to: '/estoque/depositos',      label: 'Depósitos',          icon: Warehouse },
+            { to: '/estoque/saldos',         label: 'Saldos',             icon: ChartBar },
+            { to: '/estoque/movimentacoes',  label: 'Movimentações',      icon: ArrowsLeftRight },
+            { to: '/estoque/inventarios',    label: 'Inventários',        icon: ClipboardText },
           ]}
           selBg={selBg} selColor={selColor} content={content} muted={muted} overlay={overlay}
         />

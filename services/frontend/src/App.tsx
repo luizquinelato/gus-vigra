@@ -23,6 +23,14 @@ import PriceTablesPage from './pages/PriceTablesPage'
 import PriceTableItemsPage from './pages/PriceTableItemsPage'
 import PromotionsPage from './pages/PromotionsPage'
 import CampaignsPage from './pages/CampaignsPage'
+import WarehousesPage from './pages/WarehousesPage'
+import StockBalancesPage from './pages/StockBalancesPage'
+import StockMovementsPage from './pages/StockMovementsPage'
+import InventoryCountsPage from './pages/InventoryCountsPage'
+import SuppliersPage from './pages/SuppliersPage'
+import QuickEntryPage from './pages/QuickEntryPage'
+import PurchaseOrdersPage from './pages/PurchaseOrdersPage'
+import QuotationsPage from './pages/QuotationsPage'
 import apiClient from './services/apiClient'
 import type { ThemeMode, ColorSchemaMode, ColorScheme, User } from './types'
 
@@ -171,6 +179,14 @@ function AuthenticatedApp() {
           <Route path="/cadastros/tabelas-preco/:tableId/items" element={<PriceTableItemsPage />} />
           <Route path="/cadastros/promocoes" element={<PromotionsPage />} />
           <Route path="/cadastros/campanhas" element={<CampaignsPage />} />
+          <Route path="/estoque/depositos"     element={<WarehousesPage />} />
+          <Route path="/estoque/saldos"        element={<StockBalancesPage />} />
+          <Route path="/estoque/movimentacoes" element={<StockMovementsPage />} />
+          <Route path="/estoque/inventarios"   element={<InventoryCountsPage />} />
+          <Route path="/compras/fornecedores"  element={<SuppliersPage />} />
+          <Route path="/compras/entrada-rapida" element={<QuickEntryPage />} />
+          <Route path="/compras/pedidos"       element={<PurchaseOrdersPage />} />
+          <Route path="/compras/cotacoes"      element={<QuotationsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AppShell>
