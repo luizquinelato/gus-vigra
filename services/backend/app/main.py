@@ -24,6 +24,8 @@ from app.routers import api_router
 # Para adicionar um novo módulo: `import app.modules.meu_modulo  # noqa`
 import app.modules.demo       # noqa — módulo de demonstração; remova em produção
 import app.modules.cadastros  # noqa — Master Data (produtos, categorias, preços, promoções)
+import app.modules.estoque    # noqa — Inventory (saldos, movimentos, reservas, contagem)
+import app.modules.compras    # noqa — Purchasing (fornecedores, cotações, POs, recebimento, NF-e)
 
 settings = get_settings()
 

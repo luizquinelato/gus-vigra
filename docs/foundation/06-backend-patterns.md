@@ -280,6 +280,32 @@ def list_users(
     # Implementação...
 ```
 
+### Filtros opcionais com asyncpg — `CAST` obrigatório
+
+Quando um parâmetro de filtro opcional aparece em **dois contextos distintos** dentro da mesma cláusula (`IS NULL` + comparação de coluna), o asyncpg não consegue inferir o tipo e levanta `AmbiguousParameterError: could not determine data type of parameter $N` em runtime.
+
+**Padrão obrigatório:** envelopar todo `:param` em `CAST(:param AS <TIPO>)` nesses casos.
+
+```python
+# ❌ ERRADO — quebra no asyncpg
+text("""
+    SELECT id, name FROM products
+    WHERE tenant_id = :tid
+      AND (:wid IS NULL OR warehouse_id = :wid)
+      AND (:active IS NULL OR active = :active)
+""")
+
+# ✅ CORRETO
+text("""
+    SELECT id, name FROM products
+    WHERE tenant_id = :tid
+      AND (CAST(:wid AS INT)     IS NULL OR warehouse_id = CAST(:wid AS INT))
+      AND (CAST(:active AS BOOL) IS NULL OR active       = CAST(:active AS BOOL))
+""")
+```
+
+Tipos comuns: `INT`, `BIGINT`, `TEXT`, `BOOL`, `NUMERIC`, `TIMESTAMPTZ`. O cast deve aparecer **em ambos os usos** do parâmetro (no `IS NULL` e na comparação).
+
 ## 📝 5. Padrão de Logging Estruturado
 
 O sistema utiliza um logger centralizado configurado no startup da aplicação. Nunca use `print()`.
